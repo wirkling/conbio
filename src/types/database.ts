@@ -1,0 +1,193 @@
+// Database types for Symbio Contract Management System
+
+export type ContractType =
+  | 'service_agreement'
+  | 'license_agreement'
+  | 'nda'
+  | 'sow'
+  | 'msa'
+  | 'purchase_order'
+  | 'lease'
+  | 'sponsorship'
+  | 'partnership'
+  | 'other';
+
+export type ContractStatus =
+  | 'draft'
+  | 'active'
+  | 'expired'
+  | 'terminated'
+  | 'renewed';
+
+export type Department = 'legal' | 'finance' | 'operations' | 'other';
+
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF';
+
+export interface Contract {
+  id: string;
+  title: string;
+  contract_number: string | null;
+  contract_type: ContractType;
+  status: ContractStatus;
+  description: string | null;
+
+  // Parties
+  vendor_name: string | null;
+  client_name: string | null;
+  project_name: string | null;
+  sponsor_name: string | null;
+
+  // Dates
+  signature_date: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  notice_period_days: number | null;
+  cancellation_deadline: string | null;
+  auto_renew: boolean;
+
+  // Commercials
+  original_value: number | null;
+  currency: Currency;
+  current_value: number | null;
+  payment_terms: string | null;
+
+  // Ownership
+  owner_id: string | null;
+  department: Department | null;
+  sharepoint_url: string | null;
+  notes: string | null;
+
+  // Relationships
+  parent_contract_id: string | null;
+  relationship_type: 'amendment' | 'renewal' | 'sub_contract' | null;
+
+  // Metadata
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+  updated_by: string | null;
+}
+
+export interface ChangeOrder {
+  id: string;
+  contract_id: string;
+  change_order_number: string | null;
+  title: string;
+  description: string | null;
+  effective_date: string | null;
+  value_change: number | null;
+  scope_change_summary: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface Document {
+  id: string;
+  contract_id: string;
+  change_order_id: string | null;
+  file_name: string;
+  file_type: string | null;
+  file_size_bytes: number | null;
+  storage_path: string;
+  version: number;
+  is_primary: boolean;
+  uploaded_at: string;
+  uploaded_by: string | null;
+  ai_summary: string | null;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  department: Department | null;
+  role: UserRole;
+  azure_ad_id: string | null;
+  created_at: string;
+  last_login: string | null;
+}
+
+// Extended types with relations
+export interface ContractWithRelations extends Contract {
+  change_orders?: ChangeOrder[];
+  documents?: Document[];
+  owner?: User | null;
+  parent_contract?: Contract | null;
+}
+
+// Form types
+export interface ContractFormData {
+  title: string;
+  contract_number?: string;
+  contract_type: ContractType;
+  status: ContractStatus;
+  description?: string;
+  vendor_name?: string;
+  client_name?: string;
+  project_name?: string;
+  sponsor_name?: string;
+  signature_date?: string;
+  start_date?: string;
+  end_date?: string;
+  notice_period_days?: number;
+  auto_renew?: boolean;
+  original_value?: number;
+  currency?: Currency;
+  payment_terms?: string;
+  department?: Department;
+  sharepoint_url?: string;
+  notes?: string;
+  parent_contract_id?: string;
+  relationship_type?: 'amendment' | 'renewal' | 'sub_contract';
+}
+
+export interface ChangeOrderFormData {
+  title: string;
+  change_order_number?: string;
+  description?: string;
+  effective_date?: string;
+  value_change?: number;
+  scope_change_summary?: string;
+}
+
+// Search and filter types
+export interface ContractFilters {
+  status?: ContractStatus[];
+  contract_type?: ContractType[];
+  department?: Department[];
+  date_from?: string;
+  date_to?: string;
+  min_value?: number;
+  max_value?: number;
+}
+
+export interface SearchParams {
+  query?: string;
+  filters?: ContractFilters;
+  page?: number;
+  limit?: number;
+  sort_by?: keyof Contract;
+  sort_order?: 'asc' | 'desc';
+}
+
+// HubSpot types (placeholder for future integration)
+export interface HubSpotDeal {
+  id: string;
+  name: string;
+  stage: string;
+  amount: number | null;
+  company_name: string | null;
+  close_date: string | null;
+  owner_name: string | null;
+  created_at: string;
+}
+
+export interface HubSpotConfig {
+  api_key: string | null;
+  portal_id: string | null;
+  pipeline_id: string | null;
+  contract_stage_id: string | null;
+  is_connected: boolean;
+}
