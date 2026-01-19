@@ -47,8 +47,15 @@ import {
   Clock,
   Download,
   Trash2,
+  Target,
+  Receipt,
+  Link2,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
 } from 'lucide-react';
-import { ContractStatus, ContractType } from '@/types/database';
+import { Progress } from '@/components/ui/progress';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory } from '@/types/database';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -109,6 +116,159 @@ const mockDocuments = [
     uploaded_at: '2024-06-01T14:30:00Z',
   },
 ];
+
+// NEW: Milestones mock data
+const mockMilestones = [
+  {
+    id: 'm1',
+    name: 'Project Kickoff',
+    milestone_number: 1,
+    original_due_date: '2024-02-15',
+    original_value: 15000,
+    current_due_date: '2024-02-15',
+    current_value: 15000,
+    status: 'completed' as MilestoneStatus,
+    completed_date: '2024-02-14',
+    invoiced: true,
+    paid: true,
+  },
+  {
+    id: 'm2',
+    name: 'Design Phase Complete',
+    milestone_number: 2,
+    original_due_date: '2024-04-30',
+    original_value: 35000,
+    current_due_date: '2024-04-30',
+    current_value: 35000,
+    status: 'completed' as MilestoneStatus,
+    completed_date: '2024-04-28',
+    invoiced: true,
+    paid: true,
+  },
+  {
+    id: 'm3',
+    name: 'Development Phase 1',
+    milestone_number: 3,
+    original_due_date: '2024-07-31',
+    original_value: 50000,
+    current_due_date: '2024-08-15', // Changed via CO
+    current_value: 65000, // Increased via CO
+    status: 'in_progress' as MilestoneStatus,
+    completed_date: null,
+    invoiced: false,
+    paid: false,
+  },
+  {
+    id: 'm4',
+    name: 'UAT Complete',
+    milestone_number: 4,
+    original_due_date: '2024-10-31',
+    original_value: 30000,
+    current_due_date: '2024-11-15',
+    current_value: 30000,
+    status: 'pending' as MilestoneStatus,
+    completed_date: null,
+    invoiced: false,
+    paid: false,
+  },
+  {
+    id: 'm5',
+    name: 'Go-Live',
+    milestone_number: 5,
+    original_due_date: '2024-12-31',
+    original_value: 20000,
+    current_due_date: '2025-01-15',
+    current_value: 50000, // Increased for Phase 2
+    status: 'pending' as MilestoneStatus,
+    completed_date: null,
+    invoiced: false,
+    paid: false,
+  },
+];
+
+// NEW: Pass-through costs mock data
+const mockPassthroughCosts = [
+  {
+    id: 'pt1',
+    category: 'travel' as CostCategory,
+    description: 'Client site visits & workshops',
+    passthrough_type: 'quarterly',
+    budgeted_total: 20000,
+    budgeted_per_period: 5000,
+    actual_spent: 8500,
+    currency: 'EUR',
+    period_start: '2024-02-01',
+    period_end: '2025-01-31',
+  },
+  {
+    id: 'pt2',
+    category: 'equipment' as CostCategory,
+    description: 'Development hardware & licenses',
+    passthrough_type: 'total',
+    budgeted_total: 15000,
+    budgeted_per_period: null,
+    actual_spent: 12300,
+    currency: 'EUR',
+    period_start: null,
+    period_end: null,
+  },
+  {
+    id: 'pt3',
+    category: 'other' as CostCategory,
+    description: 'Third-party API integrations',
+    passthrough_type: 'total',
+    budgeted_total: 8000,
+    budgeted_per_period: null,
+    actual_spent: 3200,
+    currency: 'EUR',
+    period_start: null,
+    period_end: null,
+  },
+];
+
+// NEW: Linked vendor contracts
+const mockLinkedVendors = [
+  {
+    id: 'vc1',
+    title: 'Subcontractor - DevTeam GmbH',
+    contract_number: 'CON-2024-010',
+    vendor_name: 'DevTeam GmbH',
+    share_type: 'percentage',
+    percentage: 25,
+    total_shared: 12500,
+    applies_to: 'Development milestones',
+    status: 'active',
+  },
+  {
+    id: 'vc2',
+    title: 'Design Services - CreativeStudio',
+    contract_number: 'CON-2024-011',
+    vendor_name: 'CreativeStudio AG',
+    share_type: 'fixed',
+    fixed_amount: 8000,
+    total_shared: 8000,
+    applies_to: 'Design Phase',
+    status: 'completed',
+  },
+];
+
+const milestoneStatusColors: Record<MilestoneStatus, string> = {
+  pending: 'bg-gray-100 text-gray-800',
+  in_progress: 'bg-blue-100 text-blue-800',
+  completed: 'bg-green-100 text-green-800',
+  delayed: 'bg-red-100 text-red-800',
+  cancelled: 'bg-gray-100 text-gray-500',
+};
+
+const costCategoryLabels: Record<CostCategory, string> = {
+  investigator_fees: 'Investigator Fees',
+  lab_costs: 'Lab Costs',
+  imaging: 'Imaging',
+  travel: 'Travel',
+  equipment: 'Equipment',
+  regulatory: 'Regulatory',
+  other: 'Other',
+};
 
 const contractTypeLabels: Record<ContractType, string> = {
   service_agreement: 'Service Agreement',
@@ -209,8 +369,17 @@ export default function ContractDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="milestones">
+            Milestones ({mockMilestones.length})
+          </TabsTrigger>
+          <TabsTrigger value="passthrough">
+            Pass-through ({mockPassthroughCosts.length})
+          </TabsTrigger>
+          <TabsTrigger value="linked">
+            Linked ({mockLinkedVendors.length})
+          </TabsTrigger>
           <TabsTrigger value="change-orders">
             Change Orders ({mockChangeOrders.length})
           </TabsTrigger>
@@ -488,6 +657,350 @@ export default function ContractDetailPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Milestones Tab */}
+        <TabsContent value="milestones" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Milestones</h2>
+              <p className="text-sm text-gray-500">
+                Track deliverables and payment schedules
+              </p>
+            </div>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Milestone
+            </Button>
+          </div>
+
+          {/* Milestone Progress Summary */}
+          <div className="grid gap-4 md:grid-cols-4">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold">
+                  {mockMilestones.filter(m => m.status === 'completed').length}/{mockMilestones.length}
+                </div>
+                <p className="text-sm text-gray-500">Milestones Completed</p>
+                <Progress
+                  value={(mockMilestones.filter(m => m.status === 'completed').length / mockMilestones.length) * 100}
+                  className="mt-2"
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCurrency(
+                    mockMilestones.filter(m => m.status === 'completed').reduce((sum, m) => sum + (m.current_value || 0), 0)
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">Completed Value</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(
+                    mockMilestones.filter(m => m.status === 'in_progress').reduce((sum, m) => sum + (m.current_value || 0), 0)
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">In Progress</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold">
+                  {formatCurrency(
+                    mockMilestones.reduce((sum, m) => sum + (m.current_value || 0), 0)
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">Total Milestone Value</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Milestones Table */}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>Milestone</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Payment</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mockMilestones.map((milestone) => {
+                    const dateChanged = milestone.original_due_date !== milestone.current_due_date;
+                    const valueChanged = milestone.original_value !== milestone.current_value;
+
+                    return (
+                      <TableRow key={milestone.id}>
+                        <TableCell className="font-medium text-gray-500">
+                          {milestone.milestone_number}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{milestone.name}</div>
+                          {milestone.completed_date && (
+                            <div className="text-xs text-green-600 flex items-center gap-1 mt-1">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Completed {formatDate(milestone.completed_date)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div>{milestone.current_due_date ? formatDate(milestone.current_due_date) : '-'}</div>
+                          {dateChanged && (
+                            <div className="text-xs text-orange-600 flex items-center gap-1 mt-1">
+                              <AlertCircle className="h-3 w-3" />
+                              Was {formatDate(milestone.original_due_date!)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="font-medium">{formatCurrency(milestone.current_value || 0)}</div>
+                          {valueChanged && (
+                            <div className="text-xs text-orange-600 mt-1">
+                              Was {formatCurrency(milestone.original_value || 0)}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={milestoneStatusColors[milestone.status]}>
+                            {milestone.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {milestone.invoiced ? (
+                              <Badge variant="outline" className="text-green-600 border-green-200">
+                                Invoiced
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-gray-400">
+                                Not invoiced
+                              </Badge>
+                            )}
+                            {milestone.paid && (
+                              <Badge variant="outline" className="text-green-600 border-green-200">
+                                Paid
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Pass-through Costs Tab */}
+        <TabsContent value="passthrough" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Pass-through Costs</h2>
+              <p className="text-sm text-gray-500">
+                Track budgeted vs. actual pass-through expenses
+              </p>
+            </div>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Cost Category
+            </Button>
+          </div>
+
+          {/* Pass-through Summary */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold">
+                  {formatCurrency(mockPassthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0))}
+                </div>
+                <p className="text-sm text-gray-500">Total Budget</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(mockPassthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0))}
+                </div>
+                <p className="text-sm text-gray-500">Spent to Date</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-green-600">
+                  {formatCurrency(
+                    mockPassthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0) -
+                    mockPassthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0)
+                  )}
+                </div>
+                <p className="text-sm text-gray-500">Remaining Budget</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Pass-through Table */}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead className="text-right">Budget</TableHead>
+                    <TableHead className="text-right">Spent</TableHead>
+                    <TableHead>Utilization</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {mockPassthroughCosts.map((cost) => {
+                    const utilization = cost.budgeted_total
+                      ? Math.round((cost.actual_spent / cost.budgeted_total) * 100)
+                      : 0;
+                    const utilizationColor = utilization > 90
+                      ? 'text-red-600'
+                      : utilization > 75
+                        ? 'text-orange-600'
+                        : 'text-green-600';
+
+                    return (
+                      <TableRow key={cost.id}>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {costCategoryLabels[cost.category]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">{cost.description}</TableCell>
+                        <TableCell>
+                          <span className="text-sm text-gray-500 capitalize">
+                            {cost.passthrough_type === 'quarterly'
+                              ? `${formatCurrency(cost.budgeted_per_period || 0)}/quarter`
+                              : cost.passthrough_type}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(cost.budgeted_total || 0)}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(cost.actual_spent)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress value={utilization} className="w-20" />
+                            <span className={`text-sm font-medium ${utilizationColor}`}>
+                              {utilization}%
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Linked Contracts Tab */}
+        <TabsContent value="linked" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Linked Contracts</h2>
+              <p className="text-sm text-gray-500">
+                Vendor contracts and revenue sharing arrangements
+              </p>
+            </div>
+            <Button>
+              <Link2 className="mr-2 h-4 w-4" />
+              Link Contract
+            </Button>
+          </div>
+
+          {/* Linked Summary */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold">
+                  {mockLinkedVendors.length}
+                </div>
+                <p className="text-sm text-gray-500">Linked Vendor Contracts</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-2xl font-bold text-blue-600">
+                  {formatCurrency(mockLinkedVendors.reduce((sum, v) => sum + v.total_shared, 0))}
+                </div>
+                <p className="text-sm text-gray-500">Total Revenue Shared</p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Linked Vendors Cards */}
+          <div className="grid gap-4 md:grid-cols-2">
+            {mockLinkedVendors.map((vendor) => (
+              <Card key={vendor.id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <CardTitle className="text-base">{vendor.title}</CardTitle>
+                      <CardDescription className="mt-1">
+                        {vendor.contract_number} • {vendor.vendor_name}
+                      </CardDescription>
+                    </div>
+                    <Badge className={vendor.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                      {vendor.status}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Revenue Share:</span>
+                    <span className="font-medium">
+                      {vendor.share_type === 'percentage'
+                        ? `${vendor.percentage}%`
+                        : formatCurrency(vendor.fixed_amount || 0)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-500">Applies to:</span>
+                    <span className="font-medium">{vendor.applies_to}</span>
+                  </div>
+                  <Separator />
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 text-sm">Total Shared:</span>
+                    <span className="font-bold text-lg">{formatCurrency(vendor.total_shared)}</span>
+                  </div>
+                  <Button variant="outline" className="w-full" size="sm">
+                    <ArrowRight className="mr-2 h-4 w-4" />
+                    View Contract
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          {mockLinkedVendors.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Link2 className="mx-auto h-10 w-10 text-gray-400 mb-4" />
+                <p className="text-gray-500">No linked contracts</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  Link vendor contracts to track revenue sharing
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Documents Tab */}

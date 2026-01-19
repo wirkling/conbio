@@ -172,7 +172,163 @@ export interface SearchParams {
   sort_order?: 'asc' | 'desc';
 }
 
+// ============================================
+// MILESTONES
+// ============================================
+
+export type MilestoneStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'delayed'
+  | 'cancelled';
+
+export interface Milestone {
+  id: string;
+  contract_id: string;
+  name: string;
+  description: string | null;
+  milestone_number: number | null;
+
+  // Original values (as defined in contract)
+  original_due_date: string | null;
+  original_value: number | null;
+
+  // Current values (after change orders)
+  current_due_date: string | null;
+  current_value: number | null;
+
+  // Status
+  status: MilestoneStatus;
+  completed_date: string | null;
+
+  // Payment tracking
+  invoiced: boolean;
+  invoiced_date: string | null;
+  paid: boolean;
+  paid_date: string | null;
+
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MilestoneChange {
+  id: string;
+  milestone_id: string;
+  change_order_id: string;
+  previous_due_date: string | null;
+  new_due_date: string | null;
+  previous_value: number | null;
+  new_value: number | null;
+  change_reason: string | null;
+  created_at: string;
+}
+
+// ============================================
+// PASS-THROUGH COSTS
+// ============================================
+
+export type PassthroughType = 'total' | 'quarterly' | 'monthly' | 'per_unit';
+
+export type CostCategory =
+  | 'investigator_fees'
+  | 'lab_costs'
+  | 'imaging'
+  | 'travel'
+  | 'equipment'
+  | 'regulatory'
+  | 'other';
+
+export interface PassthroughCost {
+  id: string;
+  contract_id: string;
+
+  category: CostCategory;
+  description: string | null;
+  passthrough_type: PassthroughType;
+
+  // Budgeted
+  budgeted_total: number | null;
+  budgeted_per_period: number | null;
+  budgeted_per_unit: number | null;
+  estimated_units: number | null;
+  currency: Currency;
+
+  // Actuals
+  actual_spent: number;
+
+  // Period
+  period_start: string | null;
+  period_end: string | null;
+
+  // Vendor link
+  vendor_contract_id: string | null;
+
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PassthroughActual {
+  id: string;
+  passthrough_cost_id: string;
+  amount: number;
+  transaction_date: string;
+  description: string | null;
+  period_year: number | null;
+  period_quarter: number | null;
+  period_month: number | null;
+  invoice_number: string | null;
+  created_at: string;
+}
+
+// ============================================
+// VENDOR REVENUE SHARE
+// ============================================
+
+export type RevenueShareType = 'percentage' | 'fixed' | 'per_unit' | 'tiered';
+
+export interface VendorRevenueShare {
+  id: string;
+  vendor_contract_id: string;
+  client_contract_id: string;
+
+  share_type: RevenueShareType;
+  percentage: number | null;
+  fixed_amount: number | null;
+  per_unit_amount: number | null;
+  currency: Currency;
+
+  description: string | null;
+  applies_to: string | null;
+
+  total_shared: number;
+
+  effective_from: string | null;
+  effective_until: string | null;
+  is_active: boolean;
+
+  created_at: string;
+  updated_at: string;
+}
+
+// Extended contract with all relations
+export interface ContractWithAllRelations extends Contract {
+  change_orders?: ChangeOrder[];
+  documents?: Document[];
+  milestones?: Milestone[];
+  passthrough_costs?: PassthroughCost[];
+  vendor_revenue_shares?: VendorRevenueShare[];
+  linked_vendor_contracts?: Contract[];
+  linked_client_contracts?: Contract[];
+  owner?: User | null;
+  parent_contract?: Contract | null;
+}
+
+// ============================================
 // HubSpot types (placeholder for future integration)
+// ============================================
+
 export interface HubSpotDeal {
   id: string;
   name: string;
