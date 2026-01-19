@@ -364,53 +364,127 @@ CREATE POLICY "Users can update vendor_revenue_share" ON vendor_revenue_share FO
 DO $$
 DECLARE
   msa_id UUID;
-  vendor_id UUID;
-  milestone_id UUID;
+  vendor_id_1 UUID;
+  vendor_id_2 UUID;
 BEGIN
   -- Get existing MSA
   SELECT id INTO msa_id FROM contracts WHERE contract_number = 'CON-2024-001' LIMIT 1;
 
   IF msa_id IS NOT NULL THEN
-    -- Add milestones to MSA
-    INSERT INTO milestones (contract_id, name, milestone_number, original_due_date, original_value, status)
+    -- Add milestones to MSA (matching UI mock data)
+    INSERT INTO milestones (
+      contract_id, name, milestone_number,
+      original_due_date, original_value,
+      current_due_date, current_value,
+      status, completed_date,
+      invoiced, invoiced_date, paid, paid_date
+    )
     VALUES
-      (msa_id, 'Project Kickoff', 1, '2024-02-15', 15000, 'completed'),
-      (msa_id, 'Design Phase Complete', 2, '2024-04-30', 35000, 'completed'),
-      (msa_id, 'Development Phase 1', 3, '2024-07-31', 50000, 'in_progress'),
-      (msa_id, 'UAT Complete', 4, '2024-10-31', 30000, 'pending'),
-      (msa_id, 'Go-Live', 5, '2024-12-31', 20000, 'pending');
+      -- Milestone 1: Completed, invoiced, paid
+      (msa_id, 'Project Kickoff', 1,
+       '2024-02-15', 15000,
+       '2024-02-15', 15000,
+       'completed', '2024-02-14',
+       TRUE, '2024-02-20', TRUE, '2024-03-15'),
+      -- Milestone 2: Completed, invoiced, paid
+      (msa_id, 'Design Phase Complete', 2,
+       '2024-04-30', 35000,
+       '2024-04-30', 35000,
+       'completed', '2024-04-28',
+       TRUE, '2024-05-02', TRUE, '2024-05-30'),
+      -- Milestone 3: In progress, date & value changed via CO
+      (msa_id, 'Development Phase 1', 3,
+       '2024-07-31', 50000,
+       '2024-08-15', 65000,  -- Changed via change order
+       'in_progress', NULL,
+       FALSE, NULL, FALSE, NULL),
+      -- Milestone 4: Pending, date changed via CO
+      (msa_id, 'UAT Complete', 4,
+       '2024-10-31', 30000,
+       '2024-11-15', 30000,  -- Date changed via change order
+       'pending', NULL,
+       FALSE, NULL, FALSE, NULL),
+      -- Milestone 5: Pending, date & value changed via CO
+      (msa_id, 'Go-Live', 5,
+       '2024-12-31', 20000,
+       '2025-01-15', 50000,  -- Date & value changed for Phase 2
+       'pending', NULL,
+       FALSE, NULL, FALSE, NULL);
 
-    -- Add pass-through costs
-    INSERT INTO passthrough_costs (contract_id, category, description, passthrough_type, budgeted_total, currency)
+    -- Add pass-through costs (matching UI mock data)
+    INSERT INTO passthrough_costs (
+      contract_id, category, description, passthrough_type,
+      budgeted_total, budgeted_per_period, actual_spent,
+      currency, period_start, period_end
+    )
     VALUES
-      (msa_id, 'travel', 'Client site visits', 'quarterly', 5000, 'EUR'),
-      (msa_id, 'equipment', 'Development hardware', 'total', 15000, 'EUR'),
-      (msa_id, 'other', 'Third-party licenses', 'total', 8000, 'EUR');
+      -- Travel: quarterly budget with actuals
+      (msa_id, 'travel', 'Client site visits & workshops', 'quarterly',
+       20000, 5000, 8500,
+       'EUR', '2024-02-01', '2025-01-31'),
+      -- Equipment: total budget with actuals
+      (msa_id, 'equipment', 'Development hardware & licenses', 'total',
+       15000, NULL, 12300,
+       'EUR', NULL, NULL),
+      -- Other: total budget with actuals
+      (msa_id, 'other', 'Third-party API integrations', 'total',
+       8000, NULL, 3200,
+       'EUR', NULL, NULL);
 
-    -- Create a vendor contract
+    -- Create vendor contract 1: DevTeam GmbH (percentage-based, active)
     INSERT INTO contracts (
       title, contract_number, contract_type, status,
       vendor_name, client_name, project_name,
       signature_date, start_date, end_date,
       original_value, currency, department
     ) VALUES (
-      'Subcontractor Agreement - DevTeam GmbH', 'CON-2024-010', 'service_agreement', 'active',
+      'Subcontractor - DevTeam GmbH', 'CON-2024-010', 'service_agreement', 'active',
       'DevTeam GmbH', 'Symbio', 'Platform Development',
       '2024-02-01', '2024-02-15', '2025-01-31',
       45000, 'EUR', 'operations'
-    ) RETURNING id INTO vendor_id;
+    ) RETURNING id INTO vendor_id_1;
 
-    -- Link vendor to MSA with revenue share
+    -- Create vendor contract 2: CreativeStudio AG (fixed amount, completed)
+    INSERT INTO contracts (
+      title, contract_number, contract_type, status,
+      vendor_name, client_name, project_name,
+      signature_date, start_date, end_date,
+      original_value, currency, department
+    ) VALUES (
+      'Design Services - CreativeStudio', 'CON-2024-011', 'service_agreement', 'expired',
+      'CreativeStudio AG', 'Symbio', 'Platform Development',
+      '2024-01-15', '2024-02-01', '2024-04-30',
+      8000, 'EUR', 'operations'
+    ) RETURNING id INTO vendor_id_2;
+
+    -- Link vendor 1 to MSA: 25% revenue share on development milestones
     INSERT INTO vendor_revenue_share (
       vendor_contract_id, client_contract_id,
-      share_type, percentage,
+      share_type, percentage, fixed_amount,
       description, applies_to,
-      effective_from, effective_until
+      total_shared,
+      effective_from, effective_until, is_active
     ) VALUES (
-      vendor_id, msa_id,
-      'percentage', 25.00,
-      'Development work subcontracted to DevTeam', 'Development milestones only',
-      '2024-02-15', '2025-01-31'
+      vendor_id_1, msa_id,
+      'percentage', 25.00, NULL,
+      'Development work subcontracted to DevTeam', 'Development milestones',
+      12500,  -- 25% of completed dev work
+      '2024-02-15', '2025-01-31', TRUE
+    );
+
+    -- Link vendor 2 to MSA: fixed amount for design phase
+    INSERT INTO vendor_revenue_share (
+      vendor_contract_id, client_contract_id,
+      share_type, percentage, fixed_amount,
+      description, applies_to,
+      total_shared,
+      effective_from, effective_until, is_active
+    ) VALUES (
+      vendor_id_2, msa_id,
+      'fixed', NULL, 8000,
+      'Design services by CreativeStudio', 'Design Phase',
+      8000,  -- Full amount paid
+      '2024-02-01', '2024-04-30', FALSE
     );
   END IF;
 END $$;
