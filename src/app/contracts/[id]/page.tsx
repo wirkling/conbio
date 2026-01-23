@@ -609,7 +609,7 @@ export default function ContractDetailPage() {
                       </div>
                     ) : (
                       <p className="text-sm whitespace-pre-wrap">
-                        {'terms' in contract.bonus_malus_terms ? contract.bonus_malus_terms.terms : ''}
+                        {(contract.bonus_malus_terms as { terms: string }).terms}
                       </p>
                     )}
                   </div>
