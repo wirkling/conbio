@@ -64,7 +64,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus } from '@/types/database';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms } from '@/types/database';
 import { calculateRetentionEndDate } from '@/lib/utils/dates';
 import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
 
@@ -345,7 +345,7 @@ function formatDate(dateString: string) {
 
 // Type guard for CustomBonusMalus
 const isCustomBonusMalus = (
-  terms: typeof mockContract.bonus_malus_terms
+  terms: BonusMalusTerms | null
 ): terms is CustomBonusMalus => {
   return terms?.type === 'custom';
 };
@@ -364,7 +364,7 @@ export default function ContractDetailPage() {
   );
 
   // Helper function to render bonus/malus terms
-  const renderBonusMalusTerms = (terms: typeof contract.bonus_malus_terms) => {
+  const renderBonusMalusTerms = (terms: BonusMalusTerms | null) => {
     if (!terms) return null;
 
     if (terms.type === 'standard') {
