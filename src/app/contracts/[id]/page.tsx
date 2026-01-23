@@ -35,6 +35,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   ArrowLeft,
   Edit,
   FileText,
@@ -53,9 +60,13 @@ import {
   CheckCircle2,
   AlertCircle,
   ArrowRight,
+  TrendingUp,
+  Copy,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { ContractStatus, ContractType, MilestoneStatus, CostCategory } from '@/types/database';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus } from '@/types/database';
+import { calculateRetentionEndDate } from '@/lib/utils/dates';
+import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -82,8 +93,14 @@ const mockContract = {
   department: 'operations',
   sharepoint_url: 'https://symbio.sharepoint.com/sites/contracts/acme-msa',
   notes: 'Reviewed by Alan on 2024-01-10. Approved by Legal.',
-  bonus_malus_terms:
-    '1 month delay = 10% penalty up to max 20% of milestone value; Early delivery bonus of 5% for milestones completed 2+ weeks ahead',
+  bonus_malus_terms: {
+    type: 'standard' as const,
+    early_bonus_percent: 5,
+    early_threshold_weeks: 2,
+    late_penalty_percent: 10,
+    penalty_per_period: 'month' as const,
+    max_penalty_percent: 20,
+  },
   inflation_clause: {
     rate_type: 'German Consumer Price Index (CPI)',
     calculation_method: 'Annual adjustment based on published index change',
@@ -566,18 +583,55 @@ export default function ContractDetailPage() {
                     <p className="text-sm font-medium text-gray-500 mb-1">
                       Bonus/Malus Agreements
                     </p>
-                    <p className="text-sm whitespace-pre-wrap">
-                      {contract.bonus_malus_terms}
-                    </p>
+                    {contract.bonus_malus_terms.type === 'standard' ? (
+                      <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
+                        <div className="flex items-start gap-2">
+                          <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                          <div>
+                            <span className="font-medium">Early Delivery Bonus: </span>
+                            <span>
+                              {contract.bonus_malus_terms.early_bonus_percent}% if delivered{' '}
+                              {contract.bonus_malus_terms.early_threshold_weeks}+ weeks early
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                          <div>
+                            <span className="font-medium">Late Delivery Penalty: </span>
+                            <span>
+                              {contract.bonus_malus_terms.late_penalty_percent}% per{' '}
+                              {contract.bonus_malus_terms.penalty_per_period}, max{' '}
+                              {contract.bonus_malus_terms.max_penalty_percent}% cap
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm whitespace-pre-wrap">
+                        {contract.bonus_malus_terms.terms}
+                      </p>
+                    )}
                   </div>
                 )}
 
                 {/* Inflation Clause */}
                 {contract.inflation_clause && (
                   <div>
-                    <p className="text-sm font-medium text-gray-500 mb-2">
-                      Inflation Clause
-                    </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-sm font-medium text-gray-500">Inflation Clause</p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          // Will implement Apply Inflation dialog
+                          alert('Apply Inflation feature coming soon!');
+                        }}
+                      >
+                        <TrendingUp className="mr-2 h-4 w-4" />
+                        Apply Inflation
+                      </Button>
+                    </div>
                     <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
                       {contract.inflation_clause.rate_type && (
                         <div className="grid grid-cols-[140px_1fr] gap-2">
@@ -620,16 +674,30 @@ export default function ContractDetailPage() {
                 )}
 
                 {/* Retention Period */}
-                {contract.retention_period_value && contract.retention_period_unit && (
+                {contract.retention_period_value && contract.retention_period_unit && contract.end_date && (
                   <div>
                     <p className="text-sm font-medium text-gray-500 mb-1">
                       Document Retention Period
                     </p>
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-gray-400" />
-                      <span className="text-sm font-medium">
-                        {contract.retention_period_value} {contract.retention_period_unit}
-                      </span>
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-gray-400" />
+                        <span className="text-sm font-medium">
+                          {contract.retention_period_value} {contract.retention_period_unit}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-gray-500">Retention ends:</span>
+                        <span className="font-medium">
+                          {formatDate(
+                            calculateRetentionEndDate(
+                              contract.end_date,
+                              contract.retention_period_value,
+                              contract.retention_period_unit
+                            ).toISOString()
+                          )}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -839,6 +907,9 @@ export default function ContractDetailPage() {
                     <TableHead className="text-right">Value</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Payment</TableHead>
+                    {contract.bonus_malus_terms?.type === 'standard' && (
+                      <TableHead>Bonus/Penalty</TableHead>
+                    )}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -900,6 +971,40 @@ export default function ContractDetailPage() {
                             )}
                           </div>
                         </TableCell>
+                        {contract.bonus_malus_terms?.type === 'standard' && (
+                          <TableCell>
+                            {(() => {
+                              const result = calculateBonusMalus(
+                                milestone,
+                                contract.bonus_malus_terms as StandardBonusMalus
+                              );
+
+                              if (result.type === 'none') {
+                                return <span className="text-gray-400 text-sm">-</span>;
+                              }
+
+                              if (result.type === 'bonus') {
+                                return (
+                                  <div className="text-green-600">
+                                    <div className="font-medium">
+                                      +{formatCurrency(result.amount, contract.currency)}
+                                    </div>
+                                    <div className="text-xs">{result.description}</div>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <div className="text-red-600">
+                                  <div className="font-medium">
+                                    -{formatCurrency(result.amount, contract.currency)}
+                                  </div>
+                                  <div className="text-xs">{result.description}</div>
+                                </div>
+                              );
+                            })()}
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}

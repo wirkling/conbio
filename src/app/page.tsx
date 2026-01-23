@@ -15,7 +15,9 @@ import {
   TrendingUp,
   Clock,
   Link2,
+  Archive,
 } from 'lucide-react';
+import { calculateRetentionEndDate, isRetentionExpiringSoon } from '@/lib/utils/dates';
 
 // Mock data - will be replaced with Supabase queries
 const stats = {
@@ -33,6 +35,8 @@ const recentContracts = [
     status: 'active',
     end_date: '2025-01-31',
     current_value: 195000,
+    retention_period_value: 10,
+    retention_period_unit: 'years' as const,
   },
   {
     id: '2',
@@ -41,6 +45,8 @@ const recentContracts = [
     status: 'active',
     end_date: '2026-02-28',
     current_value: 0,
+    retention_period_value: 5,
+    retention_period_unit: 'years' as const,
   },
   {
     id: '3',
@@ -49,6 +55,8 @@ const recentContracts = [
     status: 'active',
     end_date: '2024-12-31',
     current_value: 24000,
+    retention_period_value: 7,
+    retention_period_unit: 'years' as const,
   },
 ];
 
@@ -109,6 +117,19 @@ function getStatusColor(status: string) {
 }
 
 export default function DashboardPage() {
+  // Calculate contracts with expiring retention
+  const contractsWithExpiringRetention = recentContracts.filter((c) => {
+    if (!c.retention_period_value || !c.retention_period_unit || !c.end_date) {
+      return false;
+    }
+    const retentionEndDate = calculateRetentionEndDate(
+      c.end_date,
+      c.retention_period_value,
+      c.retention_period_unit
+    );
+    return isRetentionExpiringSoon(retentionEndDate);
+  });
+
   return (
     <div className="space-y-6">
       {/* Page header */}
@@ -128,7 +149,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-gray-500">
@@ -189,6 +210,23 @@ export default function DashboardPage() {
             <div className="text-2xl font-bold text-red-600">2</div>
             <p className="text-xs text-gray-500">
               Action required
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">
+              Retention Expiring
+            </CardTitle>
+            <Archive className="h-4 w-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-600">
+              {contractsWithExpiringRetention.length}
+            </div>
+            <p className="text-xs text-gray-500">
+              Within 90 days
             </p>
           </CardContent>
         </Card>

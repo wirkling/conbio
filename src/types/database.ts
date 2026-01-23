@@ -34,6 +34,37 @@ export interface InflationClause {
   notes?: string;              // Additional flexible text
 }
 
+// Inflation rate tracking
+export interface InflationRate {
+  id: string;
+  rate_type: string;
+  year: number;
+  rate_percentage: number;
+  effective_from: string;
+  effective_until: string | null;
+  source_url: string | null;
+  notes: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+// Bonus/Malus structured types
+export interface StandardBonusMalus {
+  type: 'standard';
+  early_bonus_percent: number;        // e.g., 5
+  early_threshold_weeks: number;      // e.g., 2 (bonus if 2+ weeks early)
+  late_penalty_percent: number;       // e.g., 10
+  penalty_per_period: 'month' | 'week' | 'day';  // "10% per month"
+  max_penalty_percent: number;        // e.g., 20
+}
+
+export interface CustomBonusMalus {
+  type: 'custom';
+  terms: string;  // Free-form text
+}
+
+export type BonusMalusTerms = StandardBonusMalus | CustomBonusMalus;
+
 export interface Contract {
   id: string;
   title: string;
@@ -69,7 +100,7 @@ export interface Contract {
   notes: string | null;
 
   // Legal Requirements
-  bonus_malus_terms: string | null;
+  bonus_malus_terms: BonusMalusTerms | null;
   inflation_clause: InflationClause | null;
   liability_terms: string | null;
   retention_period_value: number | null;
@@ -157,7 +188,7 @@ export interface ContractFormData {
   notes?: string;
   parent_contract_id?: string;
   relationship_type?: 'amendment' | 'renewal' | 'sub_contract';
-  bonus_malus_terms?: string;
+  bonus_malus_terms?: BonusMalusTerms;
   inflation_clause?: InflationClause;
   liability_terms?: string;
   retention_period_value?: number;
