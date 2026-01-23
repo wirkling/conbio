@@ -386,13 +386,17 @@ export default function ContractDetailPage() {
           </div>
         </div>
       );
-    } else {
+    }
+
+    if (terms.type === 'custom') {
       return (
         <p className="text-sm whitespace-pre-wrap">
           {terms.terms}
         </p>
       );
     }
+
+    return null;
   };
 
   return (
