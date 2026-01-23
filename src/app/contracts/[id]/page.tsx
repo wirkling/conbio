@@ -64,7 +64,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus } from '@/types/database';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus } from '@/types/database';
 import { calculateRetentionEndDate } from '@/lib/utils/dates';
 import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
 
@@ -583,7 +583,7 @@ export default function ContractDetailPage() {
                     <p className="text-sm font-medium text-gray-500 mb-1">
                       Bonus/Malus Agreements
                     </p>
-                    {contract.bonus_malus_terms.type === 'standard' ? (
+                    {contract.bonus_malus_terms.type === 'standard' && (
                       <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
                         <div className="flex items-start gap-2">
                           <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
@@ -607,9 +607,10 @@ export default function ContractDetailPage() {
                           </div>
                         </div>
                       </div>
-                    ) : (
+                    )}
+                    {contract.bonus_malus_terms.type === 'custom' && (
                       <p className="text-sm whitespace-pre-wrap">
-                        {(contract.bonus_malus_terms as { terms: string }).terms}
+                        {contract.bonus_malus_terms.terms}
                       </p>
                     )}
                   </div>
