@@ -25,6 +25,15 @@ export type UserRole = 'admin' | 'editor' | 'viewer';
 
 export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF';
 
+export type RetentionPeriodUnit = 'days' | 'months' | 'years';
+
+export interface InflationClause {
+  rate_type?: string;           // e.g., "CPI", "HVPI", "Custom Index"
+  calculation_method?: string;  // e.g., "Annual adjustment", "Quarterly review"
+  application_timing?: string;  // e.g., "On contract anniversary", "Monthly"
+  notes?: string;              // Additional flexible text
+}
+
 export interface Contract {
   id: string;
   title: string;
@@ -58,6 +67,13 @@ export interface Contract {
   department: Department | null;
   sharepoint_url: string | null;
   notes: string | null;
+
+  // Legal Requirements
+  bonus_malus_terms: string | null;
+  inflation_clause: InflationClause | null;
+  liability_terms: string | null;
+  retention_period_value: number | null;
+  retention_period_unit: RetentionPeriodUnit | null;
 
   // Relationships
   parent_contract_id: string | null;
@@ -141,6 +157,11 @@ export interface ContractFormData {
   notes?: string;
   parent_contract_id?: string;
   relationship_type?: 'amendment' | 'renewal' | 'sub_contract';
+  bonus_malus_terms?: string;
+  inflation_clause?: InflationClause;
+  liability_terms?: string;
+  retention_period_value?: number;
+  retention_period_unit?: RetentionPeriodUnit;
 }
 
 export interface ChangeOrderFormData {

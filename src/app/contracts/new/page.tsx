@@ -32,6 +32,33 @@ export default function NewContractPage() {
     e.preventDefault();
     setIsSubmitting(true);
 
+    const formData = new FormData(e.currentTarget);
+
+    // Build inflation clause object from nested fields
+    const inflationRateType = formData.get('inflation_rate_type') as string;
+    const inflationCalculation = formData.get('inflation_calculation') as string;
+    const inflationTiming = formData.get('inflation_timing') as string;
+    const inflationNotes = formData.get('inflation_notes') as string;
+
+    const inflationClause =
+      inflationRateType || inflationCalculation || inflationTiming || inflationNotes
+        ? {
+            rate_type: inflationRateType || undefined,
+            calculation_method: inflationCalculation || undefined,
+            application_timing: inflationTiming || undefined,
+            notes: inflationNotes || undefined,
+          }
+        : null;
+
+    // Note: This is a mock implementation. In production, you would:
+    // 1. Collect all form data including new legal requirement fields
+    // 2. Submit to Supabase with these fields:
+    //    - bonus_malus_terms: formData.get('bonus_malus_terms')
+    //    - inflation_clause: inflationClause (as JSONB)
+    //    - liability_terms: formData.get('liability_terms')
+    //    - retention_period_value: parseInt(formData.get('retention_period_value'))
+    //    - retention_period_unit: formData.get('retention_period_unit')
+
     // Simulate API call
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -261,6 +288,131 @@ export default function NewContractPage() {
                 <Label htmlFor="payment_terms">Payment Terms</Label>
                 <Input id="payment_terms" placeholder="e.g., Net 30" />
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Legal Requirements */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Legal Requirements</CardTitle>
+            <CardDescription>
+              Legal terms and compliance requirements
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Bonus/Malus Agreements */}
+            <div className="grid gap-2">
+              <Label htmlFor="bonus_malus_terms">
+                Bonus/Malus Agreements
+              </Label>
+              <Textarea
+                id="bonus_malus_terms"
+                name="bonus_malus_terms"
+                placeholder="e.g., 1 month delay = 10% penalty, max 20% total; Early delivery = 5% bonus"
+                rows={3}
+              />
+              <p className="text-xs text-gray-500">
+                Define performance-based bonuses or penalties with limits and percentages
+              </p>
+            </div>
+
+            {/* Inflation Clause */}
+            <div className="grid gap-2">
+              <Label>Inflation Clause</Label>
+              <div className="border rounded-md p-4 space-y-3 bg-gray-50">
+                <div className="grid gap-2">
+                  <Label htmlFor="inflation_rate_type" className="text-sm">
+                    Rate Type
+                  </Label>
+                  <Input
+                    id="inflation_rate_type"
+                    name="inflation_rate_type"
+                    placeholder="e.g., CPI, HVPI, Custom Index"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="inflation_calculation" className="text-sm">
+                    Calculation Method
+                  </Label>
+                  <Input
+                    id="inflation_calculation"
+                    name="inflation_calculation"
+                    placeholder="e.g., Annual adjustment based on published index"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="inflation_timing" className="text-sm">
+                    Application Timing
+                  </Label>
+                  <Input
+                    id="inflation_timing"
+                    name="inflation_timing"
+                    placeholder="e.g., On contract anniversary date"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="inflation_notes" className="text-sm">
+                    Additional Notes
+                  </Label>
+                  <Textarea
+                    id="inflation_notes"
+                    name="inflation_notes"
+                    placeholder="Any additional inflation clause details..."
+                    rows={2}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                Define how inflation adjustments are calculated and applied
+              </p>
+            </div>
+
+            {/* Liability Terms */}
+            <div className="grid gap-2">
+              <Label htmlFor="liability_terms">Liability</Label>
+              <Textarea
+                id="liability_terms"
+                name="liability_terms"
+                placeholder="Define liability terms, caps, exclusions, and insurance requirements..."
+                rows={4}
+              />
+              <p className="text-xs text-gray-500">
+                Liability terms specific to this contract
+              </p>
+            </div>
+
+            {/* Document Retention Period */}
+            <div className="grid gap-2">
+              <Label>Document Retention Period</Label>
+              <div className="flex gap-2 items-start">
+                <div className="grid gap-2 flex-1">
+                  <Input
+                    id="retention_period_value"
+                    name="retention_period_value"
+                    type="number"
+                    placeholder="e.g., 10"
+                    min="0"
+                    max="999"
+                    className="w-32"
+                  />
+                </div>
+                <div className="grid gap-2 flex-1">
+                  <Select name="retention_period_unit">
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Select unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">Days</SelectItem>
+                      <SelectItem value="months">Months</SelectItem>
+                      <SelectItem value="years">Years</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500">
+                Period that contract documents must be retained for compliance
+              </p>
             </div>
           </CardContent>
         </Card>

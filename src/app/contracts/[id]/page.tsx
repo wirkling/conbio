@@ -82,6 +82,18 @@ const mockContract = {
   department: 'operations',
   sharepoint_url: 'https://symbio.sharepoint.com/sites/contracts/acme-msa',
   notes: 'Reviewed by Alan on 2024-01-10. Approved by Legal.',
+  bonus_malus_terms:
+    '1 month delay = 10% penalty up to max 20% of milestone value; Early delivery bonus of 5% for milestones completed 2+ weeks ahead',
+  inflation_clause: {
+    rate_type: 'German Consumer Price Index (CPI)',
+    calculation_method: 'Annual adjustment based on published index change',
+    application_timing: 'Applied on contract anniversary date (February 1)',
+    notes: 'Minimum 2% increase threshold before adjustment applies',
+  },
+  liability_terms:
+    'Liability capped at contract value. PI insurance required minimum €5M. Excludes consequential damages except for gross negligence.',
+  retention_period_value: 10,
+  retention_period_unit: 'years' as const,
   created_at: '2024-01-10T10:30:00Z',
   updated_at: '2024-06-15T14:22:00Z',
 };
@@ -536,6 +548,101 @@ export default function ContractDetailPage() {
                     <p className="text-sm">{contract.notes}</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Legal Requirements */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Legal Requirements
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Bonus/Malus */}
+                {contract.bonus_malus_terms && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">
+                      Bonus/Malus Agreements
+                    </p>
+                    <p className="text-sm whitespace-pre-wrap">
+                      {contract.bonus_malus_terms}
+                    </p>
+                  </div>
+                )}
+
+                {/* Inflation Clause */}
+                {contract.inflation_clause && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-2">
+                      Inflation Clause
+                    </p>
+                    <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
+                      {contract.inflation_clause.rate_type && (
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
+                          <span className="text-gray-500">Rate Type:</span>
+                          <span className="font-medium">{contract.inflation_clause.rate_type}</span>
+                        </div>
+                      )}
+                      {contract.inflation_clause.calculation_method && (
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
+                          <span className="text-gray-500">Calculation:</span>
+                          <span className="font-medium">
+                            {contract.inflation_clause.calculation_method}
+                          </span>
+                        </div>
+                      )}
+                      {contract.inflation_clause.application_timing && (
+                        <div className="grid grid-cols-[140px_1fr] gap-2">
+                          <span className="text-gray-500">Applied:</span>
+                          <span className="font-medium">
+                            {contract.inflation_clause.application_timing}
+                          </span>
+                        </div>
+                      )}
+                      {contract.inflation_clause.notes && (
+                        <div className="pt-2 border-t">
+                          <span className="text-gray-500">Notes: </span>
+                          <span>{contract.inflation_clause.notes}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Liability Terms */}
+                {contract.liability_terms && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">Liability</p>
+                    <p className="text-sm whitespace-pre-wrap">{contract.liability_terms}</p>
+                  </div>
+                )}
+
+                {/* Retention Period */}
+                {contract.retention_period_value && contract.retention_period_unit && (
+                  <div>
+                    <p className="text-sm font-medium text-gray-500 mb-1">
+                      Document Retention Period
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm font-medium">
+                        {contract.retention_period_value} {contract.retention_period_unit}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Empty state if no legal requirements */}
+                {!contract.bonus_malus_terms &&
+                  !contract.inflation_clause &&
+                  !contract.liability_terms &&
+                  !contract.retention_period_value && (
+                    <p className="text-sm text-gray-400 italic">
+                      No legal requirements specified
+                    </p>
+                  )}
               </CardContent>
             </Card>
           </div>
