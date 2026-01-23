@@ -343,6 +343,13 @@ function formatDate(dateString: string) {
   });
 }
 
+// Type guard for CustomBonusMalus
+const isCustomBonusMalus = (
+  terms: typeof mockContract.bonus_malus_terms
+): terms is CustomBonusMalus => {
+  return terms?.type === 'custom';
+};
+
 export default function ContractDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -388,11 +395,10 @@ export default function ContractDetailPage() {
       );
     }
 
-    if (terms.type === 'custom') {
-      const customTerms = terms as CustomBonusMalus;
+    if (isCustomBonusMalus(terms)) {
       return (
         <p className="text-sm whitespace-pre-wrap">
-          {customTerms.terms}
+          {terms.terms}
         </p>
       );
     }
