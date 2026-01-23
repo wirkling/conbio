@@ -607,11 +607,11 @@ export default function ContractDetailPage() {
                           </div>
                         </div>
                       </div>
-                    ) : (
+                    ) : contract.bonus_malus_terms.type === 'custom' ? (
                       <p className="text-sm whitespace-pre-wrap">
                         {contract.bonus_malus_terms.terms}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                 )}
 
