@@ -389,9 +389,10 @@ export default function ContractDetailPage() {
     }
 
     if (terms.type === 'custom') {
+      const customTerms = terms as CustomBonusMalus;
       return (
         <p className="text-sm whitespace-pre-wrap">
-          {terms.terms}
+          {customTerms.terms}
         </p>
       );
     }
