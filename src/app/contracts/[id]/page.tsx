@@ -578,42 +578,45 @@ export default function ContractDetailPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Bonus/Malus */}
-                {contract.bonus_malus_terms && (
-                  <div>
-                    <p className="text-sm font-medium text-gray-500 mb-1">
-                      Bonus/Malus Agreements
-                    </p>
-                    {contract.bonus_malus_terms.type === 'standard' ? (
-                      <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
-                        <div className="flex items-start gap-2">
-                          <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
-                          <div>
-                            <span className="font-medium">Early Delivery Bonus: </span>
-                            <span>
-                              {contract.bonus_malus_terms.early_bonus_percent}% if delivered{' '}
-                              {contract.bonus_malus_terms.early_threshold_weeks}+ weeks early
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
-                          <div>
-                            <span className="font-medium">Late Delivery Penalty: </span>
-                            <span>
-                              {contract.bonus_malus_terms.late_penalty_percent}% per{' '}
-                              {contract.bonus_malus_terms.penalty_per_period}, max{' '}
-                              {contract.bonus_malus_terms.max_penalty_percent}% cap
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    ) : contract.bonus_malus_terms.type === 'custom' ? (
-                      <p className="text-sm whitespace-pre-wrap">
-                        {contract.bonus_malus_terms.terms}
+                {contract.bonus_malus_terms && (() => {
+                  const bonusMalus = contract.bonus_malus_terms;
+                  return (
+                    <div>
+                      <p className="text-sm font-medium text-gray-500 mb-1">
+                        Bonus/Malus Agreements
                       </p>
-                    ) : null}
-                  </div>
-                )}
+                      {bonusMalus.type === 'standard' ? (
+                        <div className="bg-gray-50 rounded-md p-3 space-y-2 text-sm">
+                          <div className="flex items-start gap-2">
+                            <CheckCircle2 className="h-4 w-4 text-green-600 mt-0.5" />
+                            <div>
+                              <span className="font-medium">Early Delivery Bonus: </span>
+                              <span>
+                                {bonusMalus.early_bonus_percent}% if delivered{' '}
+                                {bonusMalus.early_threshold_weeks}+ weeks early
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                            <div>
+                              <span className="font-medium">Late Delivery Penalty: </span>
+                              <span>
+                                {bonusMalus.late_penalty_percent}% per{' '}
+                                {bonusMalus.penalty_per_period}, max{' '}
+                                {bonusMalus.max_penalty_percent}% cap
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm whitespace-pre-wrap">
+                          {bonusMalus.terms}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Inflation Clause */}
                 {contract.inflation_clause && (
