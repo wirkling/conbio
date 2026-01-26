@@ -172,6 +172,10 @@ const mockMilestones = [
     invoiced_date: '2024-01-29',
     paid: true,
     paid_date: '2024-02-15',
+    inflation_adjustment_amount: null,
+    inflation_adjustment_rate: null,
+    inflation_adjustment_date: null,
+    inflation_superseded_by_co: false,
     adjustment_type: 'bonus' as const,
     adjustment_amount: 750, // 5% of 15000
     adjustment_percentage: 5,
@@ -196,6 +200,10 @@ const mockMilestones = [
     invoiced_date: '2024-04-29',
     paid: true,
     paid_date: '2024-05-15',
+    inflation_adjustment_amount: null,
+    inflation_adjustment_rate: null,
+    inflation_adjustment_date: null,
+    inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
     adjustment_percentage: null,
@@ -220,6 +228,10 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
+    inflation_adjustment_amount: null,
+    inflation_adjustment_rate: null,
+    inflation_adjustment_date: null,
+    inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
     adjustment_percentage: null,
@@ -244,6 +256,10 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
+    inflation_adjustment_amount: null,
+    inflation_adjustment_rate: null,
+    inflation_adjustment_date: null,
+    inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
     adjustment_percentage: null,
@@ -268,6 +284,10 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
+    inflation_adjustment_amount: null,
+    inflation_adjustment_rate: null,
+    inflation_adjustment_date: null,
+    inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
     adjustment_percentage: null,
@@ -511,13 +531,41 @@ export default function ContractDetailPage() {
       return;
     }
 
-    // TODO: In production:
-    // 1. Create Change Order
-    // 2. Update milestone values
-    // 3. Create milestone_changes records
-    // 4. Create audit log entries
+    const today = new Date().toISOString().split('T')[0];
+    let totalIncrease = 0;
 
-    toast.success(`Inflation adjustment applied successfully (${inflationRate}%)`);
+    // Update each milestone with inflation adjustment
+    const updatedMilestones = milestones.map((milestone) => {
+      // Skip if already has inflation or is superseded by CO
+      if (milestone.inflation_adjustment_amount || milestone.inflation_superseded_by_co) {
+        return milestone;
+      }
+
+      const currentValue = milestone.current_value || milestone.original_value || 0;
+      const inflationAmount = currentValue * (inflationRate / 100);
+      const newCurrentValue = currentValue + inflationAmount;
+      totalIncrease += inflationAmount;
+
+      return {
+        ...milestone,
+        inflation_adjustment_amount: inflationAmount,
+        inflation_adjustment_rate: inflationRate,
+        inflation_adjustment_date: today,
+        current_value: newCurrentValue,
+        updated_at: new Date().toISOString(),
+      };
+    });
+
+    setMilestones(updatedMilestones);
+
+    // TODO: In production:
+    // 1. Create Change Order for documentation (optional, since it's not really a CO)
+    // 2. Update milestones in Supabase
+    // 3. Create audit log entry
+
+    toast.success(
+      `Inflation adjustment applied: +${formatCurrency(totalIncrease, contract.currency)} (${inflationRate}%)`
+    );
     setIsApplyInflationOpen(false);
   };
 
@@ -1110,7 +1158,7 @@ export default function ContractDetailPage() {
                     <TableHead className="w-12">#</TableHead>
                     <TableHead>Milestone</TableHead>
                     <TableHead>Due Date</TableHead>
-                    <TableHead className="text-right">Base Value</TableHead>
+                    <TableHead className="text-right">Value Breakdown</TableHead>
                     <TableHead>Status</TableHead>
                     {contract.bonus_malus_terms?.type === 'standard' && (
                       <>
@@ -1164,12 +1212,33 @@ export default function ContractDetailPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="font-medium">{formatCurrency(baseValue, contract.currency)}</div>
-                          {valueChanged && (
-                            <div className="text-xs text-orange-600 mt-1">
-                              Was {formatCurrency(milestone.original_value || 0, contract.currency)}
+                          <div className="space-y-1">
+                            {/* Original Value */}
+                            <div className="text-xs text-gray-500">
+                              Base: {formatCurrency(milestone.original_value || 0, contract.currency)}
                             </div>
-                          )}
+
+                            {/* Inflation Adjustment */}
+                            {milestone.inflation_adjustment_amount && !milestone.inflation_superseded_by_co && (
+                              <div className="text-xs text-blue-600 flex items-center justify-end gap-1">
+                                <TrendingUp className="h-3 w-3" />
+                                +{formatCurrency(milestone.inflation_adjustment_amount, contract.currency)}
+                                <span className="text-gray-400">({milestone.inflation_adjustment_rate}%)</span>
+                              </div>
+                            )}
+
+                            {/* Change Order Adjustment */}
+                            {valueChanged && (
+                              <div className="text-xs text-orange-600">
+                                CO: {formatCurrency((milestone.current_value || 0) - (milestone.original_value || 0) - (milestone.inflation_superseded_by_co ? 0 : milestone.inflation_adjustment_amount || 0), contract.currency)}
+                              </div>
+                            )}
+
+                            {/* Current Value */}
+                            <div className="font-bold text-base border-t pt-1">
+                              {formatCurrency(baseValue, contract.currency)}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={milestoneStatusColors[milestone.status]}>

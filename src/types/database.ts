@@ -260,6 +260,12 @@ export interface Milestone {
   paid: boolean;
   paid_date: string | null;
 
+  // Inflation adjustment tracking
+  inflation_adjustment_amount: number | null;
+  inflation_adjustment_rate: number | null;
+  inflation_adjustment_date: string | null;
+  inflation_superseded_by_co: boolean;
+
   // Bonus/Malus adjustment tracking
   adjustment_type: 'bonus' | 'penalty' | null;
   adjustment_amount: number | null;
