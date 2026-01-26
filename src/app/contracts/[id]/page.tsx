@@ -525,11 +525,10 @@ export default function ContractDetailPage() {
   };
 
   // Calculate total contract value increase from inflation
-  const calculateTotalIncrease = () => {
-    if (!inflationRate) return 0;
+  const calculateTotalIncrease = (rate: number) => {
     return milestones.reduce((sum, m) => {
       const current = m.current_value || 0;
-      const increase = current * (inflationRate / 100);
+      const increase = current * (rate / 100);
       return sum + increase;
     }, 0);
   };
@@ -1738,26 +1737,27 @@ export default function ContractDetailPage() {
             </div>
 
             {/* Milestone Impact Preview */}
-            {((inflationRate !== null && !isManualOverride) || (isManualOverride && manualInflationRate !== null)) && (
-              <>
-                <div>
-                  <Label className="mb-2 block">Milestone Value Changes</Label>
-                  <div className="border rounded-md overflow-hidden">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Milestone</TableHead>
-                          <TableHead className="text-right">Current Value</TableHead>
-                          <TableHead className="text-right">New Value</TableHead>
-                          <TableHead className="text-right">Increase</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {milestones.map((m) => {
-                          const effectiveRate = isManualOverride ? (manualInflationRate || 0) : (inflationRate || 0);
-                          const currentValue = m.current_value || 0;
-                          const newValue = currentValue * (1 + effectiveRate / 100);
-                          const increase = newValue - currentValue;
+            {(() => {
+              const effectiveRate = isManualOverride ? manualInflationRate : inflationRate;
+              return effectiveRate !== null && (
+                <>
+                  <div>
+                    <Label className="mb-2 block">Milestone Value Changes</Label>
+                    <div className="border rounded-md overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Milestone</TableHead>
+                            <TableHead className="text-right">Current Value</TableHead>
+                            <TableHead className="text-right">New Value</TableHead>
+                            <TableHead className="text-right">Increase</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {milestones.map((m) => {
+                            const currentValue = m.current_value || 0;
+                            const newValue = currentValue * (1 + effectiveRate / 100);
+                            const increase = newValue - currentValue;
 
                           return (
                             <TableRow key={m.id}>
@@ -1784,7 +1784,7 @@ export default function ContractDetailPage() {
                   <div className="flex justify-between items-center">
                     <span className="font-medium">Total Contract Value Increase:</span>
                     <span className="text-xl font-bold text-green-600">
-                      +{formatCurrency(calculateTotalIncrease(), contract.currency)}
+                      +{formatCurrency(calculateTotalIncrease(effectiveRate), contract.currency)}
                     </span>
                   </div>
                 </div>
@@ -1801,7 +1801,7 @@ export default function ContractDetailPage() {
                           generateInflationEmail(
                             contract,
                             milestones,
-                            inflationRate,
+                            effectiveRate,
                             selectedInflationYear
                           )
                         )
@@ -1816,7 +1816,7 @@ export default function ContractDetailPage() {
                     value={generateInflationEmail(
                       contract,
                       milestones,
-                      inflationRate,
+                      effectiveRate,
                       selectedInflationYear
                     )}
                     rows={12}
@@ -1824,14 +1824,8 @@ export default function ContractDetailPage() {
                   />
                 </div>
               </>
-            )}
-
-            {inflationRate === null && (
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-sm text-yellow-800">
-                No inflation rate data available for {selectedInflationYear}. Please add inflation
-                rates to the database first.
-              </div>
-            )}
+            );
+            })()}
           </div>
 
           <DialogFooter>
