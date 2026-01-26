@@ -90,9 +90,9 @@ const mockContract = {
   auto_renew: false,
   original_value: 150000,
   current_value: 195000,
-  currency: 'EUR',
+  currency: 'EUR' as const,
   payment_terms: 'Net 30',
-  department: 'operations',
+  department: 'operations' as const,
   sharepoint_url: 'https://symbio.sharepoint.com/sites/contracts/acme-msa',
   notes: 'Reviewed by Alan on 2024-01-10. Approved by Legal.',
   bonus_malus_terms: {
