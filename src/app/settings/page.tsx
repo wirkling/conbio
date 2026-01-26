@@ -17,6 +17,7 @@ import {
   Database,
   Shield,
   ChevronRight,
+  TrendingUp,
 } from 'lucide-react';
 
 const settingsSections = [
@@ -32,6 +33,13 @@ const settingsSections = [
     description: 'Configure email notifications and reminders',
     icon: Bell,
     href: '/settings/notifications',
+    status: null,
+  },
+  {
+    title: 'Inflation Rates',
+    description: 'Manage inflation rate sources and historical data',
+    icon: TrendingUp,
+    href: '/settings/inflation',
     status: null,
   },
   {

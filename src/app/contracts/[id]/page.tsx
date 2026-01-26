@@ -441,6 +441,8 @@ export default function ContractDetailPage() {
   const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
   const [selectedInflationYear, setSelectedInflationYear] = useState<number>(new Date().getFullYear());
   const [inflationRate, setInflationRate] = useState<number | null>(null);
+  const [manualInflationRate, setManualInflationRate] = useState<number | null>(null);
+  const [isManualOverride, setIsManualOverride] = useState(false);
   const [isMarkCompleteOpen, setIsMarkCompleteOpen] = useState(false);
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [completionDate, setCompletionDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -496,16 +498,30 @@ export default function ContractDetailPage() {
     return null;
   };
 
-  // Fetch inflation rate when year changes (mock implementation)
+  // Fetch inflation rate from localStorage
   const fetchInflationRate = (year: number) => {
-    // In production, fetch from supabase inflation_rates table
-    // For now, return mock data
-    const mockRates: Record<number, number> = {
-      2024: 2.8,
-      2025: 3.2,
-      2026: 2.5,
-    };
-    setInflationRate(mockRates[year] || null);
+    const stored = localStorage.getItem('inflation_rates');
+    if (!stored) {
+      setInflationRate(null);
+      return;
+    }
+
+    const rates = JSON.parse(stored);
+    const rateType = contract.inflation_clause?.rate_type;
+
+    if (!rateType) {
+      setInflationRate(null);
+      return;
+    }
+
+    // Find matching rate
+    const matchingRate = rates.find(
+      (r: any) => r.rate_type === rateType && r.year === year
+    );
+
+    setInflationRate(matchingRate?.rate_percentage || null);
+    setManualInflationRate(null);
+    setIsManualOverride(false);
   };
 
   // Calculate total contract value increase from inflation
@@ -526,7 +542,9 @@ export default function ContractDetailPage() {
 
   // Handle Apply Inflation action
   const handleApplyInflation = async () => {
-    if (!inflationRate) {
+    const effectiveRate = isManualOverride ? manualInflationRate : inflationRate;
+
+    if (effectiveRate === null || effectiveRate === undefined) {
       toast.error('No inflation rate available');
       return;
     }
@@ -542,14 +560,14 @@ export default function ContractDetailPage() {
       }
 
       const currentValue = milestone.current_value || milestone.original_value || 0;
-      const inflationAmount = currentValue * (inflationRate / 100);
+      const inflationAmount = currentValue * (effectiveRate / 100);
       const newCurrentValue = currentValue + inflationAmount;
       totalIncrease += inflationAmount;
 
       return {
         ...milestone,
         inflation_adjustment_amount: inflationAmount,
-        inflation_adjustment_rate: inflationRate,
+        inflation_adjustment_rate: effectiveRate,
         inflation_adjustment_date: today,
         current_value: newCurrentValue,
         updated_at: new Date().toISOString(),
@@ -559,12 +577,12 @@ export default function ContractDetailPage() {
     setMilestones(updatedMilestones);
 
     // TODO: In production:
-    // 1. Create Change Order for documentation (optional, since it's not really a CO)
-    // 2. Update milestones in Supabase
-    // 3. Create audit log entry
+    // 1. Update milestones in Supabase
+    // 2. Create audit log entry
 
+    const overrideText = isManualOverride ? ' (manual override)' : '';
     toast.success(
-      `Inflation adjustment applied: +${formatCurrency(totalIncrease, contract.currency)} (${inflationRate}%)`
+      `Inflation adjustment applied: +${formatCurrency(totalIncrease, contract.currency)} (${effectiveRate}%)${overrideText}`
     );
     setIsApplyInflationOpen(false);
   };
@@ -1650,21 +1668,77 @@ export default function ContractDetailPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="2024">2024</SelectItem>
-                      <SelectItem value="2025">2025</SelectItem>
-                      <SelectItem value="2026">2026</SelectItem>
+                      {Array.from({ length: 10 }, (_, i) => {
+                        const year = new Date().getFullYear() - 2 + i;
+                        return (
+                          <SelectItem key={year} value={year.toString()}>
+                            {year}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectContent>
                   </Select>
                 </div>
               </div>
-              <div className="text-lg font-bold text-blue-700">
-                Inflation Rate:{' '}
-                {inflationRate !== null ? `${inflationRate}%` : 'Not available'}
+              <div className="flex items-center justify-between">
+                <div className="text-lg font-bold text-blue-700">
+                  Inflation Rate:{' '}
+                  {inflationRate !== null ? `${inflationRate}%` : 'Not available'}
+                </div>
+                <Link href="/settings/inflation" target="_blank">
+                  <Button variant="outline" size="sm">
+                    Manage Rates
+                  </Button>
+                </Link>
               </div>
+              {inflationRate === null && (
+                <p className="text-xs text-orange-600 mt-1">
+                  No rate configured for this year. Add it in Settings or use manual override below.
+                </p>
+              )}
+            </div>
+
+            {/* Manual Override */}
+            <div className="border rounded-md p-3">
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="manual_override"
+                  checked={isManualOverride}
+                  onChange={(e) => {
+                    setIsManualOverride(e.target.checked);
+                    if (e.target.checked && inflationRate !== null) {
+                      setManualInflationRate(inflationRate);
+                    }
+                  }}
+                  className="rounded"
+                />
+                <Label htmlFor="manual_override" className="cursor-pointer">
+                  Override inflation rate manually
+                </Label>
+              </div>
+
+              {isManualOverride && (
+                <div className="grid gap-2">
+                  <Label htmlFor="manual_rate">Custom Rate (%)</Label>
+                  <Input
+                    id="manual_rate"
+                    type="number"
+                    step="0.1"
+                    value={manualInflationRate || ''}
+                    onChange={(e) => setManualInflationRate(parseFloat(e.target.value) || null)}
+                    placeholder="e.g., 3.5"
+                    className="w-32"
+                  />
+                  <p className="text-xs text-gray-500">
+                    Enter a custom rate if the configured rate is incorrect or unavailable
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Milestone Impact Preview */}
-            {inflationRate !== null && (
+            {((inflationRate !== null && !isManualOverride) || (isManualOverride && manualInflationRate !== null)) && (
               <>
                 <div>
                   <Label className="mb-2 block">Milestone Value Changes</Label>
@@ -1680,8 +1754,9 @@ export default function ContractDetailPage() {
                       </TableHeader>
                       <TableBody>
                         {milestones.map((m) => {
+                          const effectiveRate = isManualOverride ? (manualInflationRate || 0) : (inflationRate || 0);
                           const currentValue = m.current_value || 0;
-                          const newValue = currentValue * (1 + inflationRate / 100);
+                          const newValue = currentValue * (1 + effectiveRate / 100);
                           const increase = newValue - currentValue;
 
                           return (
@@ -1763,8 +1838,14 @@ export default function ContractDetailPage() {
             <Button variant="outline" onClick={() => setIsApplyInflationOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleApplyInflation} disabled={inflationRate === null}>
-              Create Change Order
+            <Button
+              onClick={handleApplyInflation}
+              disabled={
+                (!isManualOverride && inflationRate === null) ||
+                (isManualOverride && manualInflationRate === null)
+              }
+            >
+              Apply Inflation
             </Button>
           </DialogFooter>
         </DialogContent>
