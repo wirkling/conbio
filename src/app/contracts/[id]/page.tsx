@@ -67,6 +67,7 @@ import { Progress } from '@/components/ui/progress';
 import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms, Milestone, Contract } from '@/types/database';
 import { calculateRetentionEndDate } from '@/lib/utils/dates';
 import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
+import { calculateMilestoneAdjustment } from '@/lib/utils/milestone-adjustments';
 import { generateInflationEmail } from '@/lib/utils/email-templates';
 import { toast } from 'sonner';
 
@@ -423,6 +424,7 @@ export default function ContractDetailPage() {
   const [isMarkCompleteOpen, setIsMarkCompleteOpen] = useState(false);
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [completionDate, setCompletionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [milestones, setMilestones] = useState<Milestone[]>(mockMilestones);
 
   const contract = mockContract; // In real app, fetch by params.id
 
@@ -489,7 +491,7 @@ export default function ContractDetailPage() {
   // Calculate total contract value increase from inflation
   const calculateTotalIncrease = () => {
     if (!inflationRate) return 0;
-    return mockMilestones.reduce((sum, m) => {
+    return milestones.reduce((sum, m) => {
       const current = m.current_value || 0;
       const increase = current * (inflationRate / 100);
       return sum + increase;
@@ -524,33 +526,44 @@ export default function ContractDetailPage() {
     if (!selectedMilestone) return;
 
     // Calculate bonus/malus adjustment
-    const completedMilestone = {
+    const completedMilestone: Milestone = {
       ...selectedMilestone,
       status: 'completed' as MilestoneStatus,
       completed_date: completionDate,
     };
 
+    let adjustmentUpdate = null;
     let adjustmentMessage = '';
 
     if (contract.bonus_malus_terms?.type === 'standard') {
-      const adjustment = calculateBonusMalus(
+      adjustmentUpdate = calculateMilestoneAdjustment(
         completedMilestone,
         contract.bonus_malus_terms as StandardBonusMalus
       );
 
-      if (adjustment.type !== 'none') {
-        const sign = adjustment.type === 'bonus' ? '+' : '-';
-        adjustmentMessage = ` with ${adjustment.type} ${sign}${formatCurrency(
-          adjustment.amount,
+      if (adjustmentUpdate && adjustmentUpdate.adjustment_type) {
+        const sign = adjustmentUpdate.adjustment_type === 'bonus' ? '+' : '-';
+        adjustmentMessage = ` with ${adjustmentUpdate.adjustment_type} ${sign}${formatCurrency(
+          Math.abs(adjustmentUpdate.adjustment_amount || 0),
           contract.currency
         )}`;
       }
     }
 
+    // Update the milestone in state
+    const updatedMilestone: Milestone = {
+      ...completedMilestone,
+      ...(adjustmentUpdate || {}),
+      updated_at: new Date().toISOString(),
+    };
+
+    setMilestones((prev) =>
+      prev.map((m) => (m.id === selectedMilestone.id ? updatedMilestone : m))
+    );
+
     // TODO: In production:
     // 1. Update milestone in Supabase with completion date and adjustment fields
     // 2. Create audit log entry
-    // 3. Refresh milestone data
 
     toast.success(`Milestone marked complete${adjustmentMessage}`);
     setIsMarkCompleteOpen(false);
@@ -607,7 +620,7 @@ export default function ContractDetailPage() {
         <TabsList className="flex-wrap h-auto gap-1">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="milestones">
-            Milestones ({mockMilestones.length})
+            Milestones ({milestones.length})
           </TabsTrigger>
           <TabsTrigger value="passthrough">
             Pass-through ({mockPassthroughCosts.length})
@@ -1029,11 +1042,11 @@ export default function ContractDetailPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">
-                  {mockMilestones.filter(m => m.status === 'completed').length}/{mockMilestones.length}
+                  {milestones.filter(m => m.status === 'completed').length}/{milestones.length}
                 </div>
                 <p className="text-sm text-gray-500">Milestones Completed</p>
                 <Progress
-                  value={(mockMilestones.filter(m => m.status === 'completed').length / mockMilestones.length) * 100}
+                  value={(milestones.filter(m => m.status === 'completed').length / milestones.length) * 100}
                   className="mt-2"
                 />
               </CardContent>
@@ -1042,7 +1055,7 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-green-600">
                   {formatCurrency(
-                    mockMilestones.filter(m => m.status === 'completed').reduce((sum, m) => {
+                    milestones.filter(m => m.status === 'completed').reduce((sum, m) => {
                       const baseValue = m.current_value || 0;
                       if (contract.bonus_malus_terms?.type === 'standard') {
                         const result = calculateBonusMalus(m, contract.bonus_malus_terms as StandardBonusMalus);
@@ -1060,7 +1073,7 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-blue-600">
                   {formatCurrency(
-                    mockMilestones.filter(m => m.status === 'in_progress').reduce((sum, m) => sum + (m.current_value || 0), 0)
+                    milestones.filter(m => m.status === 'in_progress').reduce((sum, m) => sum + (m.current_value || 0), 0)
                   )}
                 </div>
                 <p className="text-sm text-gray-500">In Progress</p>
@@ -1070,7 +1083,7 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">
                   {formatCurrency(
-                    mockMilestones.reduce((sum, m) => {
+                    milestones.reduce((sum, m) => {
                       const baseValue = m.current_value || 0;
                       if (contract.bonus_malus_terms?.type === 'standard' && m.status === 'completed') {
                         const result = calculateBonusMalus(m, contract.bonus_malus_terms as StandardBonusMalus);
@@ -1108,7 +1121,7 @@ export default function ContractDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockMilestones.map((milestone) => {
+                  {milestones.map((milestone) => {
                     const dateChanged = milestone.original_due_date !== milestone.current_due_date;
                     const valueChanged = milestone.original_value !== milestone.current_value;
 
@@ -1595,7 +1608,7 @@ export default function ContractDetailPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {mockMilestones.map((m) => {
+                        {milestones.map((m) => {
                           const currentValue = m.current_value || 0;
                           const newValue = currentValue * (1 + inflationRate / 100);
                           const increase = newValue - currentValue;
@@ -1641,7 +1654,7 @@ export default function ContractDetailPage() {
                         copyToClipboard(
                           generateInflationEmail(
                             contract,
-                            mockMilestones,
+                            milestones,
                             inflationRate,
                             selectedInflationYear
                           )
@@ -1656,7 +1669,7 @@ export default function ContractDetailPage() {
                     readOnly
                     value={generateInflationEmail(
                       contract,
-                      mockMilestones,
+                      milestones,
                       inflationRate,
                       selectedInflationYear
                     )}
