@@ -23,7 +23,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { ArrowLeft, Save, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { ContractType, ContractStatus, Currency } from '@/types/database';
+import { ContractType, ContractStatus, Currency, BonusMalusTerms } from '@/types/database';
 
 // Mock contract data - in production, fetch by ID from Supabase
 const mockContract = {
@@ -49,8 +49,14 @@ const mockContract = {
   department: 'operations',
   sharepoint_url: 'https://symbio.sharepoint.com/sites/contracts/acme-msa',
   notes: 'Reviewed by Alan on 2024-01-10. Approved by Legal.',
-  bonus_malus_terms:
-    '1 month delay = 10% penalty up to max 20% of milestone value; Early delivery bonus of 5% for milestones completed 2+ weeks ahead',
+  bonus_malus_terms: {
+    type: 'standard' as const,
+    early_bonus_percent: 5,
+    early_threshold_weeks: 2,
+    late_penalty_percent: 10,
+    penalty_per_period: 'month' as const,
+    max_penalty_percent: 20,
+  } as BonusMalusTerms,
   inflation_clause: {
     rate_type: 'German Consumer Price Index (CPI)',
     calculation_method: 'Annual adjustment based on published index change',
@@ -70,6 +76,11 @@ export default function EditContractPage() {
 
   // In production: const contract = await fetchContract(params.id);
   const contract = mockContract;
+
+  // Initialize bonus/malus mode based on existing data
+  const [bonusMalusMode, setBonusMalusMode] = useState<'standard' | 'custom'>(
+    contract.bonus_malus_terms?.type === 'standard' ? 'standard' : 'custom'
+  );
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -93,10 +104,40 @@ export default function EditContractPage() {
           }
         : null;
 
+    // Build bonus_malus_terms JSONB object
+    let bonusMalusTerms: BonusMalusTerms | null = null;
+
+    if (bonusMalusMode === 'standard') {
+      const earlyBonusPercent = parseFloat(formData.get('early_bonus_percent') as string);
+      const earlyThresholdWeeks = parseInt(formData.get('early_threshold_weeks') as string);
+      const latePenaltyPercent = parseFloat(formData.get('late_penalty_percent') as string);
+      const penaltyPerPeriod = formData.get('penalty_per_period') as 'month' | 'week' | 'day';
+      const maxPenaltyPercent = parseFloat(formData.get('max_penalty_percent') as string);
+
+      if (earlyBonusPercent && earlyThresholdWeeks && latePenaltyPercent && maxPenaltyPercent) {
+        bonusMalusTerms = {
+          type: 'standard',
+          early_bonus_percent: earlyBonusPercent,
+          early_threshold_weeks: earlyThresholdWeeks,
+          late_penalty_percent: latePenaltyPercent,
+          penalty_per_period: penaltyPerPeriod || 'month',
+          max_penalty_percent: maxPenaltyPercent,
+        };
+      }
+    } else {
+      const customTerms = formData.get('bonus_malus_custom') as string;
+      if (customTerms) {
+        bonusMalusTerms = {
+          type: 'custom',
+          terms: customTerms,
+        };
+      }
+    }
+
     // Note: This is a mock implementation. In production, you would:
     // 1. Collect all form data including new legal requirement fields
     // 2. Update in Supabase with these fields:
-    //    - bonus_malus_terms: formData.get('bonus_malus_terms')
+    //    - bonus_malus_terms: bonusMalusTerms (as JSONB)
     //    - inflation_clause: inflationClause (as JSONB)
     //    - liability_terms: formData.get('liability_terms')
     //    - retention_period_value: parseInt(formData.get('retention_period_value'))
@@ -401,17 +442,155 @@ export default function EditContractPage() {
           <CardContent className="space-y-4">
             {/* Bonus/Malus Agreements */}
             <div className="grid gap-2">
-              <Label htmlFor="bonus_malus_terms">Bonus/Malus Agreements</Label>
-              <Textarea
-                id="bonus_malus_terms"
-                name="bonus_malus_terms"
-                defaultValue={contract.bonus_malus_terms || ''}
-                placeholder="e.g., 1 month delay = 10% penalty, max 20% total; Early delivery = 5% bonus"
-                rows={3}
-              />
-              <p className="text-xs text-gray-500">
-                Define performance-based bonuses or penalties with limits and percentages
-              </p>
+              <Label htmlFor="bonus_malus_type">Bonus/Malus Agreements</Label>
+
+              <div className="flex items-center gap-2 mb-3">
+                <input
+                  type="checkbox"
+                  id="bonus_malus_standard"
+                  checked={bonusMalusMode === 'standard'}
+                  onChange={(e) => setBonusMalusMode(e.target.checked ? 'standard' : 'custom')}
+                  className="rounded"
+                />
+                <Label htmlFor="bonus_malus_standard">Use Standard Bonus/Malus Agreement</Label>
+              </div>
+
+              {bonusMalusMode === 'standard' ? (
+                <div className="border rounded-md p-4 space-y-3 bg-gray-50">
+                  {/* Early Delivery Bonus */}
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Early Delivery Bonus</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="grid gap-1">
+                        <Label htmlFor="early_bonus_percent" className="text-xs">
+                          Bonus %
+                        </Label>
+                        <Input
+                          id="early_bonus_percent"
+                          name="early_bonus_percent"
+                          type="number"
+                          defaultValue={
+                            contract.bonus_malus_terms?.type === 'standard'
+                              ? contract.bonus_malus_terms.early_bonus_percent
+                              : ''
+                          }
+                          placeholder="5"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="early_threshold_weeks" className="text-xs">
+                          Threshold (weeks)
+                        </Label>
+                        <Input
+                          id="early_threshold_weeks"
+                          name="early_threshold_weeks"
+                          type="number"
+                          defaultValue={
+                            contract.bonus_malus_terms?.type === 'standard'
+                              ? contract.bonus_malus_terms.early_threshold_weeks
+                              : ''
+                          }
+                          placeholder="2"
+                          min="0"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      e.g., &quot;5% bonus if delivered 2+ weeks early&quot;
+                    </p>
+                  </div>
+
+                  {/* Late Delivery Penalty */}
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Late Delivery Penalty</Label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="grid gap-1">
+                        <Label htmlFor="late_penalty_percent" className="text-xs">
+                          Penalty %
+                        </Label>
+                        <Input
+                          id="late_penalty_percent"
+                          name="late_penalty_percent"
+                          type="number"
+                          defaultValue={
+                            contract.bonus_malus_terms?.type === 'standard'
+                              ? contract.bonus_malus_terms.late_penalty_percent
+                              : ''
+                          }
+                          placeholder="10"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="penalty_per_period" className="text-xs">
+                          Per
+                        </Label>
+                        <Select
+                          name="penalty_per_period"
+                          defaultValue={
+                            contract.bonus_malus_terms?.type === 'standard'
+                              ? contract.bonus_malus_terms.penalty_per_period
+                              : 'month'
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="day">Day</SelectItem>
+                            <SelectItem value="week">Week</SelectItem>
+                            <SelectItem value="month">Month</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-1">
+                        <Label htmlFor="max_penalty_percent" className="text-xs">
+                          Max Cap %
+                        </Label>
+                        <Input
+                          id="max_penalty_percent"
+                          name="max_penalty_percent"
+                          type="number"
+                          defaultValue={
+                            contract.bonus_malus_terms?.type === 'standard'
+                              ? contract.bonus_malus_terms.max_penalty_percent
+                              : ''
+                          }
+                          placeholder="20"
+                          min="0"
+                          max="100"
+                          step="0.1"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      e.g., &quot;10% penalty per month delayed, max 20%&quot;
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Textarea
+                    id="bonus_malus_custom"
+                    name="bonus_malus_custom"
+                    defaultValue={
+                      contract.bonus_malus_terms?.type === 'custom'
+                        ? contract.bonus_malus_terms.terms
+                        : ''
+                    }
+                    placeholder="e.g., 1 month delay = 10% penalty, max 20% total; Early delivery = 5% bonus"
+                    rows={3}
+                  />
+                  <p className="text-xs text-gray-500">
+                    Define performance-based bonuses or penalties with limits and percentages
+                  </p>
+                </>
+              )}
             </div>
 
             {/* Inflation Clause */}
