@@ -117,6 +117,13 @@ export interface Contract {
   updated_by: string | null;
 }
 
+export type ChangeOrderType =
+  | 'milestone_adjustment'    // Adjust existing milestone(s)
+  | 'lump_sum_immediate'      // Immediate billing
+  | 'lump_sum_milestone'      // New milestone with due date
+  | 'passthrough_only'        // PTC budget adjustment only
+  | 'combined';               // Direct + PTC changes
+
 export interface ChangeOrder {
   id: string;
   contract_id: string;
@@ -124,10 +131,35 @@ export interface ChangeOrder {
   title: string;
   description: string | null;
   effective_date: string | null;
-  value_change: number | null;
+
+  // Type & Impact
+  co_type: ChangeOrderType;
+  value_change: number | null;           // DEPRECATED: Use direct_cost_change instead
+  direct_cost_change: number | null;     // Direct revenue/cost impact
+  ptc_change: number | null;             // Pass-through cost impact
+
+  // Document
+  document_url: string | null;           // PDF upload path or SharePoint link
+  is_document_sharepoint: boolean;
+
+  // Immediate Invoicing
+  invoiced_immediately: boolean;
+  invoiced_date: string | null;
+
+  // Metadata
   scope_change_summary: string | null;
   created_at: string;
   created_by: string | null;
+}
+
+export interface ChangeOrderPassthroughAdjustment {
+  id: string;
+  change_order_id: string;
+  passthrough_cost_id: string;
+  previous_budget: number;
+  new_budget: number;
+  adjustment_reason: string | null;
+  created_at: string;
 }
 
 export interface Document {
@@ -200,8 +232,41 @@ export interface ChangeOrderFormData {
   change_order_number?: string;
   description?: string;
   effective_date?: string;
+  co_type: ChangeOrderType;
+
+  // Direct cost/revenue changes
+  direct_cost_change?: number;
+  milestone_adjustments?: MilestoneAdjustmentInput[];  // For milestone_adjustment type
+
+  // Pass-through cost changes
+  ptc_change?: number;
+  ptc_adjustments?: PassthroughAdjustmentInput[];
+
+  // Document
+  document_file?: File;                  // For upload
+  document_sharepoint_url?: string;      // Or SharePoint link
+
+  // Lump sum specific
+  invoiced_immediately?: boolean;
+  new_milestone_due_date?: string;       // For lump_sum_milestone type
+  new_milestone_name?: string;
+
+  // Legacy
   value_change?: number;
   scope_change_summary?: string;
+}
+
+export interface MilestoneAdjustmentInput {
+  milestone_id: string;
+  new_value?: number;
+  new_due_date?: string;
+  adjustment_reason?: string;
+}
+
+export interface PassthroughAdjustmentInput {
+  passthrough_cost_id: string;
+  new_budget: number;
+  adjustment_reason?: string;
 }
 
 // Search and filter types
