@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -571,9 +571,11 @@ export default function ContractDetailPage() {
   };
 
   // Load inflation rate when dialog opens or year changes
-  if (isApplyInflationOpen && selectedInflationYear) {
-    fetchInflationRate(selectedInflationYear);
-  }
+  useEffect(() => {
+    if (isApplyInflationOpen && selectedInflationYear) {
+      fetchInflationRate(selectedInflationYear);
+    }
+  }, [isApplyInflationOpen, selectedInflationYear]);
 
   return (
     <div className="space-y-6">
