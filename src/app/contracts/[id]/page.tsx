@@ -124,14 +124,29 @@ const mockContract = {
   updated_by: null,
 };
 
-const mockChangeOrders = [
+const mockChangeOrders: Array<{
+  id: string;
+  change_order_number: string | null;
+  title: string;
+  description: string | null;
+  effective_date: string | null;
+  co_type: ChangeOrderType;
+  value_change: number | null;
+  direct_cost_change: number | null;
+  ptc_change: number | null;
+  document_url: string | null;
+  is_document_sharepoint: boolean;
+  invoiced_immediately: boolean;
+  invoiced_date: string | null;
+  created_at: string;
+}> = [
   {
     id: 'co1',
     change_order_number: 'CO-001',
     title: 'Scope Extension - Phase 2',
     description: 'Added Phase 2 deliverables including mobile app development and API integrations.',
     effective_date: '2024-06-01',
-    co_type: 'milestone_adjustment' as const,
+    co_type: 'milestone_adjustment',
     value_change: 45000,
     direct_cost_change: 45000,
     ptc_change: null,
