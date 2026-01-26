@@ -260,6 +260,13 @@ export interface Milestone {
   paid: boolean;
   paid_date: string | null;
 
+  // Bonus/Malus adjustment tracking
+  adjustment_type: 'bonus' | 'penalty' | null;
+  adjustment_amount: number | null;
+  adjustment_percentage: number | null;
+  adjustment_reason: string | null;
+  adjustment_calculated_at: string | null;
+
   created_at: string;
   updated_at: string;
 }
@@ -398,4 +405,35 @@ export interface HubSpotConfig {
   pipeline_id: string | null;
   contract_stage_id: string | null;
   is_connected: boolean;
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+export type AuditAction = 'create' | 'update' | 'delete' | 'complete' | 'approve' | 'reject';
+
+export interface AuditLog {
+  id: string;
+
+  // What was changed
+  entity_type: string;  // 'contract', 'milestone', 'change_order', etc.
+  entity_id: string;
+  action: AuditAction;
+
+  // Change details
+  field_name: string | null;
+  old_value: string | null;
+  new_value: string | null;
+  change_summary: string | null;
+
+  // Context
+  user_id: string | null;
+  user_name: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+
+  // Metadata
+  created_at: string;
+  metadata: Record<string, any> | null;
 }
