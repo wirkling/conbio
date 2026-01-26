@@ -420,6 +420,9 @@ export default function ContractDetailPage() {
   const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
   const [selectedInflationYear, setSelectedInflationYear] = useState<number>(new Date().getFullYear());
   const [inflationRate, setInflationRate] = useState<number | null>(null);
+  const [isMarkCompleteOpen, setIsMarkCompleteOpen] = useState(false);
+  const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
+  const [completionDate, setCompletionDate] = useState<string>(new Date().toISOString().split('T')[0]);
 
   const contract = mockContract; // In real app, fetch by params.id
 
@@ -514,6 +517,44 @@ export default function ContractDetailPage() {
 
     toast.success(`Inflation adjustment applied successfully (${inflationRate}%)`);
     setIsApplyInflationOpen(false);
+  };
+
+  // Handle Mark Complete action
+  const handleMarkComplete = async () => {
+    if (!selectedMilestone) return;
+
+    // Calculate bonus/malus adjustment
+    const completedMilestone = {
+      ...selectedMilestone,
+      status: 'completed' as MilestoneStatus,
+      completed_date: completionDate,
+    };
+
+    let adjustmentMessage = '';
+
+    if (contract.bonus_malus_terms?.type === 'standard') {
+      const adjustment = calculateBonusMalus(
+        completedMilestone,
+        contract.bonus_malus_terms as StandardBonusMalus
+      );
+
+      if (adjustment.type !== 'none') {
+        const sign = adjustment.type === 'bonus' ? '+' : '-';
+        adjustmentMessage = ` with ${adjustment.type} ${sign}${formatCurrency(
+          adjustment.amount,
+          contract.currency
+        )}`;
+      }
+    }
+
+    // TODO: In production:
+    // 1. Update milestone in Supabase with completion date and adjustment fields
+    // 2. Create audit log entry
+    // 3. Refresh milestone data
+
+    toast.success(`Milestone marked complete${adjustmentMessage}`);
+    setIsMarkCompleteOpen(false);
+    setSelectedMilestone(null);
   };
 
   // Load inflation rate when dialog opens or year changes
@@ -1063,6 +1104,7 @@ export default function ContractDetailPage() {
                       </>
                     )}
                     <TableHead>Payment</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1163,6 +1205,22 @@ export default function ContractDetailPage() {
                               </Badge>
                             )}
                           </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {milestone.status !== 'completed' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedMilestone(milestone);
+                                setCompletionDate(new Date().toISOString().split('T')[0]);
+                                setIsMarkCompleteOpen(true);
+                              }}
+                            >
+                              <CheckCircle2 className="mr-2 h-3 w-3" />
+                              Mark Complete
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
@@ -1624,6 +1682,122 @@ export default function ContractDetailPage() {
             <Button onClick={handleApplyInflation} disabled={inflationRate === null}>
               Create Change Order
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Mark Complete Dialog */}
+      <Dialog open={isMarkCompleteOpen} onOpenChange={setIsMarkCompleteOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Mark Milestone Complete</DialogTitle>
+            <DialogDescription>
+              Set the completion date and review the automatic bonus/penalty calculation
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedMilestone && (
+            <div className="space-y-4 py-4">
+              {/* Milestone Info */}
+              <div className="bg-gray-50 p-3 rounded-md">
+                <div className="font-medium text-lg">{selectedMilestone.name}</div>
+                <div className="text-sm text-gray-500 mt-1">
+                  Due: {selectedMilestone.current_due_date ? formatDate(selectedMilestone.current_due_date) : 'N/A'}
+                </div>
+                <div className="text-sm text-gray-500">
+                  Value: {formatCurrency(selectedMilestone.current_value || 0, contract.currency)}
+                </div>
+              </div>
+
+              {/* Completion Date */}
+              <div className="grid gap-2">
+                <Label htmlFor="completion_date">Completion Date</Label>
+                <Input
+                  id="completion_date"
+                  type="date"
+                  value={completionDate}
+                  onChange={(e) => setCompletionDate(e.target.value)}
+                />
+              </div>
+
+              {/* Bonus/Malus Preview */}
+              {contract.bonus_malus_terms?.type === 'standard' && completionDate && (
+                <>
+                  <Separator />
+                  <div>
+                    <Label className="mb-2 block">Bonus/Penalty Calculation</Label>
+                    {(() => {
+                      const completedMilestone = {
+                        ...selectedMilestone,
+                        completed_date: completionDate,
+                      };
+                      const adjustment = calculateBonusMalus(
+                        completedMilestone,
+                        contract.bonus_malus_terms as StandardBonusMalus
+                      );
+
+                      const baseValue = selectedMilestone.current_value || 0;
+                      const adjustmentAmount =
+                        adjustment.type === 'bonus'
+                          ? adjustment.amount
+                          : adjustment.type === 'penalty'
+                            ? -adjustment.amount
+                            : 0;
+                      const finalAmount = baseValue + adjustmentAmount;
+
+                      if (adjustment.type === 'none') {
+                        return (
+                          <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm">
+                            <div className="text-gray-600">
+                              No adjustment - completed within standard timeframe
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          className={`border rounded-md p-3 text-sm ${
+                            adjustment.type === 'bonus'
+                              ? 'bg-green-50 border-green-200'
+                              : 'bg-red-50 border-red-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-medium">
+                              {adjustment.type === 'bonus' ? 'Early Delivery Bonus' : 'Late Delivery Penalty'}
+                            </span>
+                            <span
+                              className={`font-bold ${
+                                adjustment.type === 'bonus' ? 'text-green-700' : 'text-red-700'
+                              }`}
+                            >
+                              {adjustment.type === 'bonus' ? '+' : '-'}
+                              {formatCurrency(adjustment.amount, contract.currency)}
+                            </span>
+                          </div>
+                          <div className="text-xs mb-2">{adjustment.description}</div>
+                          <Separator className="my-2" />
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">Final Invoice Amount:</span>
+                            <span className="font-bold text-lg">
+                              {formatCurrency(finalAmount, contract.currency)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsMarkCompleteOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleMarkComplete}>Mark Complete</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
