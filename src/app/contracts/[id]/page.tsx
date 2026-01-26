@@ -64,9 +64,11 @@ import {
   Copy,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms } from '@/types/database';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms, Milestone, Contract } from '@/types/database';
 import { calculateRetentionEndDate } from '@/lib/utils/dates';
 import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
+import { generateInflationEmail } from '@/lib/utils/email-templates';
+import { toast } from 'sonner';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -410,6 +412,9 @@ export default function ContractDetailPage() {
   const router = useRouter();
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
+  const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
+  const [selectedInflationYear, setSelectedInflationYear] = useState<number>(new Date().getFullYear());
+  const [inflationRate, setInflationRate] = useState<number | null>(null);
 
   const contract = mockContract; // In real app, fetch by params.id
 
@@ -460,6 +465,56 @@ export default function ContractDetailPage() {
 
     return null;
   };
+
+  // Fetch inflation rate when year changes (mock implementation)
+  const fetchInflationRate = (year: number) => {
+    // In production, fetch from supabase inflation_rates table
+    // For now, return mock data
+    const mockRates: Record<number, number> = {
+      2024: 2.8,
+      2025: 3.2,
+      2026: 2.5,
+    };
+    setInflationRate(mockRates[year] || null);
+  };
+
+  // Calculate total contract value increase from inflation
+  const calculateTotalIncrease = () => {
+    if (!inflationRate) return 0;
+    return mockMilestones.reduce((sum, m) => {
+      const current = m.current_value || 0;
+      const increase = current * (inflationRate / 100);
+      return sum + increase;
+    }, 0);
+  };
+
+  // Copy text to clipboard
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard');
+  };
+
+  // Handle Apply Inflation action
+  const handleApplyInflation = async () => {
+    if (!inflationRate) {
+      toast.error('No inflation rate available');
+      return;
+    }
+
+    // TODO: In production:
+    // 1. Create Change Order
+    // 2. Update milestone values
+    // 3. Create milestone_changes records
+    // 4. Create audit log entries
+
+    toast.success(`Inflation adjustment applied successfully (${inflationRate}%)`);
+    setIsApplyInflationOpen(false);
+  };
+
+  // Load inflation rate when dialog opens or year changes
+  if (isApplyInflationOpen && selectedInflationYear) {
+    fetchInflationRate(selectedInflationYear);
+  }
 
   return (
     <div className="space-y-6">
@@ -700,10 +755,7 @@ export default function ContractDetailPage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => {
-                          // Will implement Apply Inflation dialog
-                          alert('Apply Inflation feature coming soon!');
-                        }}
+                        onClick={() => setIsApplyInflationOpen(true)}
                       >
                         <TrendingUp className="mr-2 h-4 w-4" />
                         Apply Inflation
@@ -1420,6 +1472,156 @@ export default function ContractDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Apply Inflation Dialog */}
+      <Dialog open={isApplyInflationOpen} onOpenChange={setIsApplyInflationOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Apply Inflation Adjustment</DialogTitle>
+            <DialogDescription>
+              Create a change order to adjust milestone values based on inflation
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Rate Selection */}
+            <div className="bg-blue-50 p-3 rounded-md">
+              <div className="grid grid-cols-2 gap-2 text-sm mb-2">
+                <div>
+                  <span className="text-gray-500">Rate Type:</span>
+                  <span className="font-medium ml-2">
+                    {contract.inflation_clause?.rate_type || 'N/A'}
+                  </span>
+                </div>
+                <div className="flex items-center">
+                  <span className="text-gray-500">Year:</span>
+                  <Select
+                    value={selectedInflationYear.toString()}
+                    onValueChange={(v) => setSelectedInflationYear(parseInt(v))}
+                  >
+                    <SelectTrigger className="w-24 ml-2 h-8">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="2024">2024</SelectItem>
+                      <SelectItem value="2025">2025</SelectItem>
+                      <SelectItem value="2026">2026</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="text-lg font-bold text-blue-700">
+                Inflation Rate:{' '}
+                {inflationRate !== null ? `${inflationRate}%` : 'Not available'}
+              </div>
+            </div>
+
+            {/* Milestone Impact Preview */}
+            {inflationRate !== null && (
+              <>
+                <div>
+                  <Label className="mb-2 block">Milestone Value Changes</Label>
+                  <div className="border rounded-md overflow-hidden">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Milestone</TableHead>
+                          <TableHead className="text-right">Current Value</TableHead>
+                          <TableHead className="text-right">New Value</TableHead>
+                          <TableHead className="text-right">Increase</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {mockMilestones.map((m) => {
+                          const currentValue = m.current_value || 0;
+                          const newValue = currentValue * (1 + inflationRate / 100);
+                          const increase = newValue - currentValue;
+
+                          return (
+                            <TableRow key={m.id}>
+                              <TableCell className="font-medium">{m.name}</TableCell>
+                              <TableCell className="text-right">
+                                {formatCurrency(currentValue, contract.currency)}
+                              </TableCell>
+                              <TableCell className="text-right font-medium text-green-600">
+                                {formatCurrency(newValue, contract.currency)}
+                              </TableCell>
+                              <TableCell className="text-right text-sm text-green-600">
+                                +{formatCurrency(increase, contract.currency)}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </div>
+
+                {/* Total Impact */}
+                <div className="bg-gray-50 p-3 rounded-md">
+                  <div className="flex justify-between items-center">
+                    <span className="font-medium">Total Contract Value Increase:</span>
+                    <span className="text-xl font-bold text-green-600">
+                      +{formatCurrency(calculateTotalIncrease(), contract.currency)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Email Template Preview */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Email Template</Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        copyToClipboard(
+                          generateInflationEmail(
+                            contract,
+                            mockMilestones,
+                            inflationRate,
+                            selectedInflationYear
+                          )
+                        )
+                      }
+                    >
+                      <Copy className="mr-2 h-3 w-3" />
+                      Copy Email
+                    </Button>
+                  </div>
+                  <Textarea
+                    readOnly
+                    value={generateInflationEmail(
+                      contract,
+                      mockMilestones,
+                      inflationRate,
+                      selectedInflationYear
+                    )}
+                    rows={12}
+                    className="font-mono text-xs"
+                  />
+                </div>
+              </>
+            )}
+
+            {inflationRate === null && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4 text-sm text-yellow-800">
+                No inflation rate data available for {selectedInflationYear}. Please add inflation
+                rates to the database first.
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsApplyInflationOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleApplyInflation} disabled={inflationRate === null}>
+              Create Change Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
