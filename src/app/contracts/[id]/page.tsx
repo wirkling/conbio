@@ -919,10 +919,18 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-green-600">
                   {formatCurrency(
-                    mockMilestones.filter(m => m.status === 'completed').reduce((sum, m) => sum + (m.current_value || 0), 0)
+                    mockMilestones.filter(m => m.status === 'completed').reduce((sum, m) => {
+                      const baseValue = m.current_value || 0;
+                      if (contract.bonus_malus_terms?.type === 'standard') {
+                        const result = calculateBonusMalus(m, contract.bonus_malus_terms as StandardBonusMalus);
+                        const adjustment = result.type === 'bonus' ? result.amount : result.type === 'penalty' ? -result.amount : 0;
+                        return sum + baseValue + adjustment;
+                      }
+                      return sum + baseValue;
+                    }, 0)
                   )}
                 </div>
-                <p className="text-sm text-gray-500">Completed Value</p>
+                <p className="text-sm text-gray-500">Completed Invoice Value</p>
               </CardContent>
             </Card>
             <Card>
@@ -939,10 +947,18 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">
                   {formatCurrency(
-                    mockMilestones.reduce((sum, m) => sum + (m.current_value || 0), 0)
+                    mockMilestones.reduce((sum, m) => {
+                      const baseValue = m.current_value || 0;
+                      if (contract.bonus_malus_terms?.type === 'standard' && m.status === 'completed') {
+                        const result = calculateBonusMalus(m, contract.bonus_malus_terms as StandardBonusMalus);
+                        const adjustment = result.type === 'bonus' ? result.amount : result.type === 'penalty' ? -result.amount : 0;
+                        return sum + baseValue + adjustment;
+                      }
+                      return sum + baseValue;
+                    }, 0)
                   )}
                 </div>
-                <p className="text-sm text-gray-500">Total Milestone Value</p>
+                <p className="text-sm text-gray-500">Total Invoice Value</p>
               </CardContent>
             </Card>
           </div>
@@ -956,18 +972,34 @@ export default function ContractDetailPage() {
                     <TableHead className="w-12">#</TableHead>
                     <TableHead>Milestone</TableHead>
                     <TableHead>Due Date</TableHead>
-                    <TableHead className="text-right">Value</TableHead>
+                    <TableHead className="text-right">Base Value</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Payment</TableHead>
                     {contract.bonus_malus_terms?.type === 'standard' && (
-                      <TableHead>Bonus/Penalty</TableHead>
+                      <>
+                        <TableHead className="text-right">Adjustment</TableHead>
+                        <TableHead className="text-right">Invoice Amount</TableHead>
+                      </>
                     )}
+                    <TableHead>Payment</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {mockMilestones.map((milestone) => {
                     const dateChanged = milestone.original_due_date !== milestone.current_due_date;
                     const valueChanged = milestone.original_value !== milestone.current_value;
+
+                    // Calculate bonus/malus if applicable
+                    const bonusMalusResult = contract.bonus_malus_terms?.type === 'standard'
+                      ? calculateBonusMalus(milestone, contract.bonus_malus_terms as StandardBonusMalus)
+                      : null;
+
+                    const baseValue = milestone.current_value || 0;
+                    const adjustmentAmount = bonusMalusResult?.type === 'bonus'
+                      ? bonusMalusResult.amount
+                      : bonusMalusResult?.type === 'penalty'
+                        ? -bonusMalusResult.amount
+                        : 0;
+                    const invoiceAmount = baseValue + adjustmentAmount;
 
                     return (
                       <TableRow key={milestone.id}>
@@ -993,10 +1025,10 @@ export default function ContractDetailPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          <div className="font-medium">{formatCurrency(milestone.current_value || 0)}</div>
+                          <div className="font-medium">{formatCurrency(baseValue, contract.currency)}</div>
                           {valueChanged && (
                             <div className="text-xs text-orange-600 mt-1">
-                              Was {formatCurrency(milestone.original_value || 0)}
+                              Was {formatCurrency(milestone.original_value || 0, contract.currency)}
                             </div>
                           )}
                         </TableCell>
@@ -1005,6 +1037,33 @@ export default function ContractDetailPage() {
                             {milestone.status.replace('_', ' ')}
                           </Badge>
                         </TableCell>
+                        {contract.bonus_malus_terms?.type === 'standard' && (
+                          <>
+                            <TableCell className="text-right">
+                              {bonusMalusResult && bonusMalusResult.type !== 'none' ? (
+                                <div className={bonusMalusResult.type === 'bonus' ? 'text-green-600' : 'text-red-600'}>
+                                  <div className="font-medium">
+                                    {bonusMalusResult.type === 'bonus' ? '+' : '-'}
+                                    {formatCurrency(bonusMalusResult.amount, contract.currency)}
+                                  </div>
+                                  <div className="text-xs">{bonusMalusResult.description}</div>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 text-sm">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="font-bold text-lg">
+                                {formatCurrency(invoiceAmount, contract.currency)}
+                              </div>
+                              {bonusMalusResult && bonusMalusResult.type !== 'none' && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {bonusMalusResult.type === 'bonus' ? 'Incl. bonus' : 'After penalty'}
+                                </div>
+                              )}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {milestone.invoiced ? (
@@ -1023,40 +1082,6 @@ export default function ContractDetailPage() {
                             )}
                           </div>
                         </TableCell>
-                        {contract.bonus_malus_terms?.type === 'standard' && (
-                          <TableCell>
-                            {(() => {
-                              const result = calculateBonusMalus(
-                                milestone,
-                                contract.bonus_malus_terms as StandardBonusMalus
-                              );
-
-                              if (result.type === 'none') {
-                                return <span className="text-gray-400 text-sm">-</span>;
-                              }
-
-                              if (result.type === 'bonus') {
-                                return (
-                                  <div className="text-green-600">
-                                    <div className="font-medium">
-                                      +{formatCurrency(result.amount, contract.currency)}
-                                    </div>
-                                    <div className="text-xs">{result.description}</div>
-                                  </div>
-                                );
-                              }
-
-                              return (
-                                <div className="text-red-600">
-                                  <div className="font-medium">
-                                    -{formatCurrency(result.amount, contract.currency)}
-                                  </div>
-                                  <div className="text-xs">{result.description}</div>
-                                </div>
-                              );
-                            })()}
-                          </TableCell>
-                        )}
                       </TableRow>
                     );
                   })}
