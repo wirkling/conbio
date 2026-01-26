@@ -113,8 +113,13 @@ const mockContract = {
     'Liability capped at contract value. PI insurance required minimum €5M. Excludes consequential damages except for gross negligence.',
   retention_period_value: 10,
   retention_period_unit: 'years' as const,
+  owner_id: null,
+  parent_contract_id: null,
+  relationship_type: null,
   created_at: '2024-01-10T10:30:00Z',
   updated_at: '2024-06-15T14:22:00Z',
+  created_by: null,
+  updated_by: null,
 };
 
 const mockChangeOrders = [
