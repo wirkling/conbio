@@ -235,6 +235,14 @@ export type MilestoneStatus =
   | 'delayed'
   | 'cancelled';
 
+export interface InflationAdjustment {
+  year: number;
+  rate: number;
+  amount: number;
+  applied_date: string;
+  applied_by: string | null;
+}
+
 export interface Milestone {
   id: string;
   contract_id: string;
@@ -260,10 +268,8 @@ export interface Milestone {
   paid: boolean;
   paid_date: string | null;
 
-  // Inflation adjustment tracking
-  inflation_adjustment_amount: number | null;
-  inflation_adjustment_rate: number | null;
-  inflation_adjustment_date: string | null;
+  // Inflation adjustment tracking (array for multiple years)
+  inflation_adjustments: InflationAdjustment[];
   inflation_superseded_by_co: boolean;
 
   // Bonus/Malus adjustment tracking

@@ -172,9 +172,7 @@ const mockMilestones = [
     invoiced_date: '2024-01-29',
     paid: true,
     paid_date: '2024-02-15',
-    inflation_adjustment_amount: null,
-    inflation_adjustment_rate: null,
-    inflation_adjustment_date: null,
+    inflation_adjustments: [],
     inflation_superseded_by_co: false,
     adjustment_type: 'bonus' as const,
     adjustment_amount: 750, // 5% of 15000
@@ -200,9 +198,7 @@ const mockMilestones = [
     invoiced_date: '2024-04-29',
     paid: true,
     paid_date: '2024-05-15',
-    inflation_adjustment_amount: null,
-    inflation_adjustment_rate: null,
-    inflation_adjustment_date: null,
+    inflation_adjustments: [],
     inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
@@ -228,9 +224,7 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
-    inflation_adjustment_amount: null,
-    inflation_adjustment_rate: null,
-    inflation_adjustment_date: null,
+    inflation_adjustments: [],
     inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
@@ -256,9 +250,7 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
-    inflation_adjustment_amount: null,
-    inflation_adjustment_rate: null,
-    inflation_adjustment_date: null,
+    inflation_adjustments: [],
     inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
@@ -284,9 +276,7 @@ const mockMilestones = [
     invoiced_date: null,
     paid: false,
     paid_date: null,
-    inflation_adjustment_amount: null,
-    inflation_adjustment_rate: null,
-    inflation_adjustment_date: null,
+    inflation_adjustments: [],
     inflation_superseded_by_co: false,
     adjustment_type: null,
     adjustment_amount: null,
@@ -524,11 +514,29 @@ export default function ContractDetailPage() {
     setIsManualOverride(false);
   };
 
-  // Calculate total contract value increase from inflation
+  // Calculate total contract value increase from inflation (with filtering and compounding)
   const calculateTotalIncrease = (rate: number) => {
-    return milestones.reduce((sum, m) => {
-      const current = m.current_value || 0;
-      const increase = current * (rate / 100);
+    // Filter applicable milestones
+    const applicableMilestones = milestones.filter((m) => {
+      if (m.status === 'completed') return false;
+      if (m.inflation_superseded_by_co) return false;
+      if (m.current_due_date) {
+        const dueYear = new Date(m.current_due_date).getFullYear();
+        return dueYear >= selectedInflationYear;
+      }
+      return false;
+    });
+
+    return applicableMilestones.reduce((sum, m) => {
+      // Calculate with compounding
+      let baseForInflation = m.original_value || 0;
+      m.inflation_adjustments.forEach((adj) => {
+        if (adj.year !== selectedInflationYear) {
+          baseForInflation += adj.amount;
+        }
+      });
+
+      const increase = baseForInflation * (rate / 100);
       return sum + increase;
     }, 0);
   };
@@ -548,26 +556,93 @@ export default function ContractDetailPage() {
       return;
     }
 
+    // Step 1: Filter milestones - only incomplete, forward-looking, not superseded
+    const applicableMilestones = milestones.filter((m) => {
+      // Skip completed milestones
+      if (m.status === 'completed') return false;
+
+      // Skip if superseded by change order
+      if (m.inflation_superseded_by_co) return false;
+
+      // Only apply to milestones with due date >= selected year
+      if (m.current_due_date) {
+        const dueYear = new Date(m.current_due_date).getFullYear();
+        return dueYear >= selectedInflationYear;
+      }
+
+      return false;
+    });
+
+    if (applicableMilestones.length === 0) {
+      toast.error('No applicable milestones found for this year');
+      return;
+    }
+
+    // Step 2: Check for duplicate year application
+    const duplicates = applicableMilestones.filter((m) =>
+      m.inflation_adjustments.some((adj) => adj.year === selectedInflationYear)
+    );
+
+    if (duplicates.length > 0) {
+      const confirmed = confirm(
+        `${selectedInflationYear} inflation already applied to ${duplicates.length} milestone(s). Overwrite with new rate?`
+      );
+      if (!confirmed) return;
+    }
+
     const today = new Date().toISOString().split('T')[0];
     let totalIncrease = 0;
 
-    // Update each milestone with inflation adjustment
+    // Step 3: Apply inflation with compounding
     const updatedMilestones = milestones.map((milestone) => {
-      // Skip if already has inflation or is superseded by CO
-      if (milestone.inflation_adjustment_amount || milestone.inflation_superseded_by_co) {
-        return milestone;
-      }
+      // Only update applicable milestones
+      if (!applicableMilestones.includes(milestone)) return milestone;
 
-      const currentValue = milestone.current_value || milestone.original_value || 0;
-      const inflationAmount = currentValue * (effectiveRate / 100);
-      const newCurrentValue = currentValue + inflationAmount;
+      // Calculate base value for inflation (with compounding from previous years)
+      let baseForInflation = milestone.original_value || 0;
+
+      // Add all previous inflation adjustments (compounding)
+      milestone.inflation_adjustments.forEach((adj) => {
+        // Don't include the current year if we're overwriting
+        if (adj.year !== selectedInflationYear) {
+          baseForInflation += adj.amount;
+        }
+      });
+
+      // Calculate new inflation amount
+      const inflationAmount = baseForInflation * (effectiveRate / 100);
       totalIncrease += inflationAmount;
+
+      // Create new adjustment entry
+      const newAdjustment = {
+        year: selectedInflationYear,
+        rate: effectiveRate,
+        amount: inflationAmount,
+        applied_date: today,
+        applied_by: null, // TODO: Add user ID when auth is implemented
+      };
+
+      // Add or update adjustment in array
+      const existingIndex = milestone.inflation_adjustments.findIndex(
+        (adj) => adj.year === selectedInflationYear
+      );
+
+      const newAdjustments =
+        existingIndex >= 0
+          ? milestone.inflation_adjustments.map((adj, i) =>
+              i === existingIndex ? newAdjustment : adj
+            )
+          : [...milestone.inflation_adjustments, newAdjustment].sort(
+              (a, b) => a.year - b.year
+            );
+
+      // Recalculate current_value from original_value + all inflation adjustments
+      const totalInflation = newAdjustments.reduce((sum, adj) => sum + adj.amount, 0);
+      const newCurrentValue = (milestone.original_value || 0) + totalInflation;
 
       return {
         ...milestone,
-        inflation_adjustment_amount: inflationAmount,
-        inflation_adjustment_rate: effectiveRate,
-        inflation_adjustment_date: today,
+        inflation_adjustments: newAdjustments,
         current_value: newCurrentValue,
         updated_at: new Date().toISOString(),
       };
@@ -581,7 +656,10 @@ export default function ContractDetailPage() {
 
     const overrideText = isManualOverride ? ' (manual override)' : '';
     toast.success(
-      `Inflation adjustment applied: +${formatCurrency(totalIncrease, contract.currency)} (${effectiveRate}%)${overrideText}`
+      `Inflation applied to ${applicableMilestones.length} milestone(s): +${formatCurrency(
+        totalIncrease,
+        contract.currency
+      )} (${effectiveRate}%)${overrideText}`
     );
     setIsApplyInflationOpen(false);
   };
@@ -1235,21 +1313,37 @@ export default function ContractDetailPage() {
                               Base: {formatCurrency(milestone.original_value || 0, contract.currency)}
                             </div>
 
-                            {/* Inflation Adjustment */}
-                            {milestone.inflation_adjustment_amount && !milestone.inflation_superseded_by_co && (
-                              <div className="text-xs text-blue-600 flex items-center justify-end gap-1">
-                                <TrendingUp className="h-3 w-3" />
-                                +{formatCurrency(milestone.inflation_adjustment_amount, contract.currency)}
-                                <span className="text-gray-400">({milestone.inflation_adjustment_rate}%)</span>
-                              </div>
+                            {/* Inflation Adjustments (array - show each year) */}
+                            {milestone.inflation_adjustments.length > 0 && !milestone.inflation_superseded_by_co && (
+                              <>
+                                {milestone.inflation_adjustments.map((adj) => (
+                                  <div key={adj.year} className="text-xs text-blue-600 flex items-center justify-end gap-1">
+                                    <TrendingUp className="h-3 w-3" />
+                                    +{formatCurrency(adj.amount, contract.currency)}
+                                    <span className="text-gray-400">
+                                      ({adj.rate}% / {adj.year})
+                                    </span>
+                                  </div>
+                                ))}
+                              </>
                             )}
 
                             {/* Change Order Adjustment */}
-                            {valueChanged && (
-                              <div className="text-xs text-orange-600">
-                                CO: {formatCurrency((milestone.current_value || 0) - (milestone.original_value || 0) - (milestone.inflation_superseded_by_co ? 0 : milestone.inflation_adjustment_amount || 0), contract.currency)}
-                              </div>
-                            )}
+                            {(() => {
+                              const totalInflation = milestone.inflation_superseded_by_co
+                                ? 0
+                                : milestone.inflation_adjustments.reduce((sum, adj) => sum + adj.amount, 0);
+                              const coAdjustment = (milestone.current_value || 0) - (milestone.original_value || 0) - totalInflation;
+
+                              if (Math.abs(coAdjustment) > 0.01) {
+                                return (
+                                  <div className="text-xs text-orange-600">
+                                    CO: {formatCurrency(coAdjustment, contract.currency)}
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
 
                             {/* Current Value */}
                             <div className="font-bold text-base border-t pt-1">
@@ -1739,45 +1833,91 @@ export default function ContractDetailPage() {
             {/* Milestone Impact Preview */}
             {(() => {
               const effectiveRate = isManualOverride ? manualInflationRate : inflationRate;
+
+              // Filter applicable milestones
+              const applicableMilestones = milestones.filter((m) => {
+                if (m.status === 'completed') return false;
+                if (m.inflation_superseded_by_co) return false;
+                if (m.current_due_date) {
+                  const dueYear = new Date(m.current_due_date).getFullYear();
+                  return dueYear >= selectedInflationYear;
+                }
+                return false;
+              });
+
               return effectiveRate !== null && (
                 <>
                   <div>
-                    <Label className="mb-2 block">Milestone Value Changes</Label>
+                    <Label className="mb-2 block">
+                      Milestone Value Changes
+                      <span className="text-xs text-gray-500 font-normal ml-2">
+                        ({applicableMilestones.length} of {milestones.length} milestones affected)
+                      </span>
+                    </Label>
                     <div className="border rounded-md overflow-hidden">
                       <Table>
                         <TableHeader>
                           <TableRow>
                             <TableHead>Milestone</TableHead>
-                            <TableHead className="text-right">Current Value</TableHead>
+                            <TableHead className="text-right">Base for Inflation</TableHead>
                             <TableHead className="text-right">New Value</TableHead>
                             <TableHead className="text-right">Increase</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
                           {milestones.map((m) => {
-                            const currentValue = m.current_value || 0;
-                            const newValue = currentValue * (1 + effectiveRate / 100);
-                            const increase = newValue - currentValue;
+                            const isApplicable = applicableMilestones.includes(m);
 
-                          return (
-                            <TableRow key={m.id}>
-                              <TableCell className="font-medium">{m.name}</TableCell>
-                              <TableCell className="text-right">
-                                {formatCurrency(currentValue, contract.currency)}
-                              </TableCell>
-                              <TableCell className="text-right font-medium text-green-600">
-                                {formatCurrency(newValue, contract.currency)}
-                              </TableCell>
-                              <TableCell className="text-right text-sm text-green-600">
-                                +{formatCurrency(increase, contract.currency)}
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                      </TableBody>
-                    </Table>
+                            if (!isApplicable) {
+                              return (
+                                <TableRow key={m.id} className="bg-gray-50 opacity-50">
+                                  <TableCell className="font-medium text-gray-500">{m.name}</TableCell>
+                                  <TableCell className="text-right text-gray-500" colSpan={3}>
+                                    <span className="text-xs">
+                                      {m.status === 'completed' ? 'Completed' :
+                                       m.inflation_superseded_by_co ? 'Superseded by CO' :
+                                       'Past year'}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+
+                            // Calculate with compounding
+                            let baseForInflation = m.original_value || 0;
+                            m.inflation_adjustments.forEach((adj) => {
+                              if (adj.year !== selectedInflationYear) {
+                                baseForInflation += adj.amount;
+                              }
+                            });
+
+                            const inflationIncrease = baseForInflation * (effectiveRate / 100);
+                            const newValue = (m.current_value || 0) + inflationIncrease;
+
+                            return (
+                              <TableRow key={m.id}>
+                                <TableCell className="font-medium">{m.name}</TableCell>
+                                <TableCell className="text-right">
+                                  {formatCurrency(baseForInflation, contract.currency)}
+                                  {m.inflation_adjustments.length > 0 && (
+                                    <div className="text-xs text-gray-500">
+                                      (with {m.inflation_adjustments.length} prev. adj.)
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right font-medium text-green-600">
+                                  {formatCurrency(newValue, contract.currency)}
+                                </TableCell>
+                                <TableCell className="text-right text-sm text-green-600">
+                                  +{formatCurrency(inflationIncrease, contract.currency)}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
                   </div>
-                </div>
 
                 {/* Total Impact */}
                 <div className="bg-gray-50 p-3 rounded-md">
