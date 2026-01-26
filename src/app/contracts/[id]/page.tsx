@@ -460,6 +460,7 @@ export default function ContractDetailPage() {
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [completionDate, setCompletionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [milestones, setMilestones] = useState<Milestone[]>(mockMilestones);
+  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
 
   // Multi-step Change Order form state
   const [coFormStep, setCoFormStep] = useState(1);  // 1: Type, 2: Impact, 3: Document, 4: Review
@@ -468,11 +469,12 @@ export default function ContractDetailPage() {
     milestone_adjustments: [],
     ptc_adjustments: [],
   });
+  const [includePtcAdjustments, setIncludePtcAdjustments] = useState(false);
 
   const contract = mockContract; // In real app, fetch by params.id
 
-  const totalChangeOrderValue = mockChangeOrders.reduce(
-    (sum, co) => sum + (co.value_change || 0),
+  const totalChangeOrderValue = changeOrders.reduce(
+    (sum: number, co) => sum + (co.value_change || 0),
     0
   );
 
@@ -779,15 +781,21 @@ export default function ContractDetailPage() {
         }, 0);
       }
 
-      if (
-        coFormData.co_type === 'passthrough_only' ||
-        coFormData.co_type === 'combined'
-      ) {
-        ptcChange = (coFormData.ptc_adjustments || []).reduce((sum, adj) => {
+      // Calculate PTC change if adjustments are present
+      if (includePtcAdjustments && coFormData.ptc_adjustments && coFormData.ptc_adjustments.length > 0) {
+        ptcChange = coFormData.ptc_adjustments.reduce((sum, adj) => {
           const ptc = mockPassthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
           const change = adj.new_budget - (ptc?.budgeted_total || 0);
           return sum + change;
         }, 0);
+      }
+
+      // Determine final CO type based on what's being changed
+      let finalCoType: ChangeOrderType = coFormData.co_type || 'milestone_adjustment';
+      if (includePtcAdjustments && ptcChange !== 0 && directCostChange !== 0) {
+        finalCoType = 'combined';
+      } else if (includePtcAdjustments && ptcChange !== 0 && directCostChange === 0) {
+        finalCoType = 'passthrough_only';
       }
 
       // 3. Create change order
@@ -798,7 +806,7 @@ export default function ContractDetailPage() {
         title: coFormData.title,
         description: coFormData.description || null,
         effective_date: coFormData.effective_date || new Date().toISOString().split('T')[0],
-        co_type: coFormData.co_type,
+        co_type: finalCoType,
         direct_cost_change: directCostChange,
         ptc_change: ptcChange,
         value_change: directCostChange, // Backward compatibility
@@ -814,6 +822,9 @@ export default function ContractDetailPage() {
 
       // TODO: Insert into Supabase
       // await supabase.from('change_orders').insert([newChangeOrder]);
+
+      // Add to local state
+      setChangeOrders((prev: typeof mockChangeOrders) => [...prev, newChangeOrder]);
 
       // 4. Handle milestone adjustments
       if (
@@ -895,10 +906,7 @@ export default function ContractDetailPage() {
       }
 
       // 6. Handle pass-through adjustments
-      if (
-        (coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') &&
-        coFormData.ptc_adjustments
-      ) {
+      if (includePtcAdjustments && coFormData.ptc_adjustments && coFormData.ptc_adjustments.length > 0) {
         for (const adj of coFormData.ptc_adjustments) {
           const ptc = mockPassthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
           if (!ptc) continue;
@@ -931,6 +939,7 @@ export default function ContractDetailPage() {
         milestone_adjustments: [],
         ptc_adjustments: [],
       });
+      setIncludePtcAdjustments(false);
 
       // Refresh data
       // TODO: Fetch updated contract, milestones, change orders
@@ -1001,7 +1010,7 @@ export default function ContractDetailPage() {
             Linked ({mockLinkedVendors.length})
           </TabsTrigger>
           <TabsTrigger value="change-orders">
-            Change Orders ({mockChangeOrders.length})
+            Change Orders ({changeOrders.length})
           </TabsTrigger>
           <TabsTrigger value="documents">
             Documents ({mockDocuments.length})
@@ -1295,6 +1304,7 @@ export default function ContractDetailPage() {
                   milestone_adjustments: [],
                   ptc_adjustments: [],
                 });
+                setIncludePtcAdjustments(false);
               }
             }}>
               <DialogTrigger asChild>
@@ -1381,25 +1391,31 @@ export default function ContractDetailPage() {
                           <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
                             <RadioGroupItem value="passthrough_only" id="type-ptc" />
                             <Label htmlFor="type-ptc" className="cursor-pointer flex-1">
-                              <div className="font-medium">Pass-Through Cost Adjustment</div>
+                              <div className="font-medium">Pass-Through Cost Adjustment Only</div>
                               <p className="text-xs text-gray-500">
-                                Adjust pass-through cost budgets only
-                              </p>
-                            </Label>
-                          </div>
-
-                          <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
-                            <RadioGroupItem value="combined" id="type-combined" />
-                            <Label htmlFor="type-combined" className="cursor-pointer flex-1">
-                              <div className="font-medium">Combined (Direct + Pass-Through)</div>
-                              <p className="text-xs text-gray-500">
-                                Includes both direct revenue and pass-through cost changes
+                                Adjust pass-through cost budgets without affecting direct revenue
                               </p>
                             </Label>
                           </div>
                         </div>
                       </RadioGroup>
                     </div>
+
+                    {/* PTC Checkbox - shown for non-passthrough types */}
+                    {coFormData.co_type !== 'passthrough_only' && (
+                      <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-md p-3">
+                        <input
+                          type="checkbox"
+                          id="include_ptc"
+                          checked={includePtcAdjustments}
+                          onChange={(e) => setIncludePtcAdjustments(e.target.checked)}
+                          className="rounded"
+                        />
+                        <Label htmlFor="include_ptc" className="cursor-pointer">
+                          Also adjust pass-through costs
+                        </Label>
+                      </div>
+                    )}
 
                     {/* Basic Fields */}
                     <div className="grid grid-cols-2 gap-4">
@@ -1634,8 +1650,8 @@ export default function ContractDetailPage() {
                       </div>
                     )}
 
-                    {/* D. Pass-Through Only or Combined */}
-                    {(coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') && (
+                    {/* D. Pass-Through Cost Adjustments (shown when checkbox is checked OR type is passthrough_only) */}
+                    {(includePtcAdjustments || coFormData.co_type === 'passthrough_only') && (
                       <div className="space-y-3">
                         <Label>Pass-Through Cost Adjustments</Label>
                         <div className="border rounded-md p-4 space-y-3 max-h-96 overflow-y-auto">
@@ -1725,30 +1741,6 @@ export default function ContractDetailPage() {
                       </div>
                     )}
 
-                    {/* E. Direct Cost for Combined Type */}
-                    {coFormData.co_type === 'combined' && (
-                      <div className="space-y-3 border-t pt-4">
-                        <Label className="font-medium">Direct Revenue/Cost Change</Label>
-                        <div className="grid gap-2">
-                          <Label htmlFor="direct_cost_combined">Amount (€)</Label>
-                          <Input
-                            id="direct_cost_combined"
-                            type="number"
-                            placeholder="e.g., 25000 or -5000"
-                            value={coFormData.direct_cost_change || ''}
-                            onChange={(e) =>
-                              setCoFormData({
-                                ...coFormData,
-                                direct_cost_change: parseFloat(e.target.value) || undefined,
-                              })
-                            }
-                          />
-                          <p className="text-xs text-gray-500">
-                            Positive for revenue increase, negative for cost reduction
-                          </p>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
 
@@ -1847,7 +1839,7 @@ export default function ContractDetailPage() {
                           {coFormData.co_type === 'lump_sum_immediate' && 'Lump Sum (Immediate)'}
                           {coFormData.co_type === 'lump_sum_milestone' && 'Lump Sum (Milestone)'}
                           {coFormData.co_type === 'passthrough_only' && 'Pass-Through Only'}
-                          {coFormData.co_type === 'combined' && 'Combined (Direct + PTC)'}
+                          {includePtcAdjustments && coFormData.co_type !== 'passthrough_only' && ' + Pass-Through Costs'}
                         </div>
 
                         <div className="text-gray-500">Title:</div>
@@ -1907,8 +1899,7 @@ export default function ContractDetailPage() {
                         )}
 
                         {(coFormData.co_type === 'lump_sum_immediate' ||
-                          coFormData.co_type === 'lump_sum_milestone' ||
-                          (coFormData.co_type === 'combined' && coFormData.direct_cost_change)) && (
+                          coFormData.co_type === 'lump_sum_milestone') && (
                           <div className="text-sm">
                             <span className="text-gray-500">Direct Revenue/Cost Change:</span>{' '}
                             <span
@@ -1924,8 +1915,7 @@ export default function ContractDetailPage() {
                           </div>
                         )}
 
-                        {(coFormData.co_type === 'passthrough_only' ||
-                          coFormData.co_type === 'combined') &&
+                        {includePtcAdjustments &&
                           coFormData.ptc_adjustments &&
                           coFormData.ptc_adjustments.length > 0 && (
                             <div className="text-sm">
@@ -2007,7 +1997,7 @@ export default function ContractDetailPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockChangeOrders.map((co) => (
+                  {changeOrders.map((co: typeof mockChangeOrders[0]) => (
                     <TableRow key={co.id}>
                       <TableCell>
                         <div className="font-medium">{co.title}</div>
@@ -2066,7 +2056,7 @@ export default function ContractDetailPage() {
                       </TableCell>
                     </TableRow>
                   ))}
-                  {mockChangeOrders.length === 0 && (
+                  {changeOrders.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-8">
                         <p className="text-gray-500">No change orders yet</p>
