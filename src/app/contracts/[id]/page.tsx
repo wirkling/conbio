@@ -524,7 +524,7 @@ export default function ContractDetailPage() {
             *,
             milestones(*),
             change_orders(*),
-            passthrough_costs(*)
+            passthrough_costs!contract_id(*)
           `)
           .eq('id', params.id)
           .single();
