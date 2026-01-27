@@ -508,7 +508,7 @@ export default function ContractDetailPage() {
     if (!authLoading && !user) {
       router.push('/login');
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user]);
 
   // Fetch contract data
   useEffect(() => {
