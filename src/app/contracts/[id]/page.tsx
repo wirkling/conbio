@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Contract, Milestone, PassthroughCost } from '@/types/database';
+import { Contract, Milestone, PassthroughCost, ChangeOrder } from '@/types/database';
 import {
   Card,
   CardContent,
@@ -43,12 +43,14 @@ export default function ContractDetailPage() {
   const [data, setData] = useState<{
     contract: Contract | null;
     milestones: Milestone[];
+    changeOrders: ChangeOrder[];
     passthroughCosts: PassthroughCost[];
     loading: boolean;
     error: string | null;
   }>({
     contract: null,
     milestones: [],
+    changeOrders: [],
     passthroughCosts: [],
     loading: true,
     error: null,
@@ -66,6 +68,7 @@ export default function ContractDetailPage() {
           .select(`
             *,
             milestones(*),
+            change_orders(*),
             passthrough_costs!contract_id(*)
           `)
           .eq('id', contractId)
@@ -83,6 +86,7 @@ export default function ContractDetailPage() {
         setData({
           contract: fetchedData,
           milestones: fetchedData.milestones || [],
+          changeOrders: fetchedData.change_orders || [],
           passthroughCosts: fetchedData.passthrough_costs || [],
           loading: false,
           error: null,
@@ -127,6 +131,11 @@ export default function ContractDetailPage() {
 
   const contract = data.contract;
 
+  // Calculate totals
+  const totalMilestoneValue = data.milestones.reduce((sum, m) => sum + (m.current_value || 0), 0);
+  const totalChangeOrderValue = data.changeOrders.reduce((sum, co) => sum + (co.value_change || 0), 0);
+  const totalPTCBudget = data.passthroughCosts.reduce((sum, ptc) => sum + (ptc.budgeted_total || 0), 0);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -141,6 +150,44 @@ export default function ContractDetailPage() {
           </div>
         </div>
         <Badge className={statusColors[contract.status]}>{contract.status}</Badge>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Current Value</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{formatCurrency(contract.current_value, contract.currency)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Milestones</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{data.milestones.length}</p>
+            <p className="text-xs text-gray-500">{formatCurrency(totalMilestoneValue, contract.currency)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">Change Orders</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{data.changeOrders.length}</p>
+            <p className="text-xs text-gray-500">{formatCurrency(totalChangeOrderValue, contract.currency)}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-gray-500">PTC Budget</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold">{formatCurrency(totalPTCBudget, contract.currency)}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Overview Card */}
@@ -175,6 +222,7 @@ export default function ContractDetailPage() {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="milestones">Milestones ({data.milestones.length})</TabsTrigger>
+          <TabsTrigger value="change-orders">Change Orders ({data.changeOrders.length})</TabsTrigger>
           <TabsTrigger value="ptc">Pass-Through Costs ({data.passthroughCosts.length})</TabsTrigger>
         </TabsList>
 
@@ -214,8 +262,42 @@ export default function ContractDetailPage() {
                 <ul className="space-y-2">
                   {data.milestones.map((m) => (
                     <li key={m.id} className="flex justify-between items-center border-b pb-2">
-                      <span>{m.name}</span>
+                      <div>
+                        <p className="font-medium">{m.name}</p>
+                        <p className="text-xs text-gray-500">
+                          Status: {m.status} {m.current_due_date && `• Due: ${m.current_due_date}`}
+                        </p>
+                      </div>
                       <span className="font-medium">{formatCurrency(m.current_value, contract.currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="change-orders">
+          <Card>
+            <CardHeader>
+              <CardTitle>Change Orders</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {data.changeOrders.length === 0 ? (
+                <p className="text-gray-500">No change orders</p>
+              ) : (
+                <ul className="space-y-2">
+                  {data.changeOrders.map((co) => (
+                    <li key={co.id} className="flex justify-between items-center border-b pb-2">
+                      <div>
+                        <p className="font-medium">{co.title}</p>
+                        <p className="text-xs text-gray-500">
+                          {co.change_order_number} {co.effective_date && `• ${co.effective_date}`}
+                        </p>
+                      </div>
+                      <span className={`font-medium ${(co.value_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {(co.value_change || 0) >= 0 ? '+' : ''}{formatCurrency(co.value_change || 0, contract.currency)}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -236,8 +318,16 @@ export default function ContractDetailPage() {
                 <ul className="space-y-2">
                   {data.passthroughCosts.map((ptc) => (
                     <li key={ptc.id} className="flex justify-between items-center border-b pb-2">
-                      <span>{ptc.description}</span>
-                      <span className="font-medium">{formatCurrency(ptc.budgeted_total, ptc.currency)}</span>
+                      <div>
+                        <p className="font-medium">{ptc.description}</p>
+                        <p className="text-xs text-gray-500">
+                          {ptc.category} • Type: {ptc.passthrough_type}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">{formatCurrency(ptc.budgeted_total, ptc.currency)}</p>
+                        <p className="text-xs text-gray-500">Spent: {formatCurrency(ptc.actual_spent, ptc.currency)}</p>
+                      </div>
                     </li>
                   ))}
                 </ul>
