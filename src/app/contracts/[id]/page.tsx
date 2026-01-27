@@ -450,6 +450,7 @@ const isCustomBonusMalus = (
 
 export default function ContractDetailPage() {
   const params = useParams();
+  const contractId = params.id as string;
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
@@ -511,7 +512,7 @@ export default function ContractDetailPage() {
 
   // Fetch contract data
   useEffect(() => {
-    if (!user || !params.id) return;
+    if (!user || !contractId) return;
 
     const fetchContractData = async () => {
       setLoading(true);
@@ -526,7 +527,7 @@ export default function ContractDetailPage() {
             change_orders(*),
             passthrough_costs!contract_id(*)
           `)
-          .eq('id', params.id)
+          .eq('id', contractId)
           .single();
 
         if (contractError) {
@@ -549,7 +550,7 @@ export default function ContractDetailPage() {
     };
 
     fetchContractData();
-  }, [user, params.id, router]);
+  }, [user, contractId]);
 
   const totalChangeOrderValue = changeOrders.reduce(
     (sum: number, co) => sum + (co.value_change || 0),
