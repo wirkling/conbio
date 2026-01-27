@@ -610,6 +610,11 @@ export default function ContractDetailPage() {
     );
   }
 
+  // TypeScript guard: at this point contract must exist
+  if (!contract) {
+    return null;
+  }
+
   // Helper function to render bonus/malus terms
   const renderBonusMalusTerms = (terms: BonusMalusTerms | null) => {
     if (!terms) return null;
@@ -711,6 +716,11 @@ export default function ContractDetailPage() {
 
   // Fetch inflation rate from Supabase
   const fetchInflationRate = async (year: number) => {
+    if (!contract) {
+      setInflationRate(null);
+      return;
+    }
+
     const rateType = contract.inflation_clause?.rate_type;
 
     if (!rateType) {
