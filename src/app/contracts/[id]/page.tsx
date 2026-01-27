@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -706,7 +706,7 @@ export default function ContractDetailPage() {
   };
 
   // Fetch inflation rate from Supabase
-  const fetchInflationRate = async (year: number) => {
+  const fetchInflationRate = useCallback(async (year: number) => {
     if (!contract) {
       setInflationRate(null);
       return;
@@ -735,7 +735,7 @@ export default function ContractDetailPage() {
     setInflationRate(data?.rate_percentage || null);
     setManualInflationRate(null);
     setIsManualOverride(false);
-  };
+  }, [contract]);
 
   // Calculate total contract value increase from inflation (with filtering and compounding)
   const calculateTotalIncrease = (rate: number) => {
@@ -1232,7 +1232,7 @@ export default function ContractDetailPage() {
         console.error('Error in fetchInflationRate:', error);
       });
     }
-  }, [isApplyInflationOpen, selectedInflationYear]);
+  }, [isApplyInflationOpen, selectedInflationYear, fetchInflationRate]);
 
   // Pass-through Cost handlers
   const handleAddPTC = async () => {
