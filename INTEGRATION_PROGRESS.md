@@ -45,16 +45,19 @@
 - ✅ Audit log entry on creation
 - ✅ Redirects to detail page on success
 
+### Phase 6: Document Management (Completed)
+- ✅ Document download from Supabase Storage
+- ✅ Helper functions for both contract-documents and change-orders buckets
+- ✅ Download buttons in Change Orders table
+- ✅ SharePoint links open in new tab
+- ✅ Documents tab displays real contract documents
+- ✅ Download functionality for all uploaded files
+- ⚠️ Document deletion (deferred - can be added later if needed)
+- ⚠️ Document viewer/preview (deferred - download works for now)
+
 ---
 
 ## 🚧 Remaining Phases
-
-### Phase 6: Document Management
-- [ ] Document download from Supabase Storage
-- [ ] Document viewer/preview in contract detail page
-- [ ] Document deletion
-- [ ] Link documents to contracts and change orders
-- [ ] Display document list in contract detail page
 
 ### Phase 7: Pass-Through Costs
 - [ ] Create pass-through cost entry dialog
