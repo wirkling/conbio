@@ -456,47 +456,46 @@ export default function ContractDetailPage() {
 
   // Circuit breaker to prevent infinite loops
   const hasFetchedRef = useRef(false);
-  const fetchAttemptsRef = useRef(0);
-  const renderCountRef = useRef(0);
 
-  // Data state
-  const [contract, setContract] = useState<Contract | null>(null);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
-  const [passthroughCosts, setPassthroughCosts] = useState<PassthroughCost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  // Render counter to detect infinite loops
-  renderCountRef.current += 1;
-  console.log(`Render count: ${renderCountRef.current}`, {
-    authLoading,
-    loading,
-    hasContract: !!contract,
-    contractId,
-    userId: user?.id,
-    milestonesCount: milestones.length,
-    changeOrdersCount: changeOrders.length,
+  // Consolidated data state - single state object to prevent multiple renders
+  const [contractData, setContractData] = useState<{
+    contract: Contract | null;
+    milestones: Milestone[];
+    changeOrders: typeof mockChangeOrders;
+    passthroughCosts: PassthroughCost[];
+    loading: boolean;
+    error: string | null;
+  }>({
+    contract: null,
+    milestones: [],
+    changeOrders: mockChangeOrders,
+    passthroughCosts: [],
+    loading: true,
+    error: null,
   });
 
-  if (renderCountRef.current > 50) {
-    console.error('INFINITE LOOP DETECTED: Too many renders!');
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <p className="text-red-600 font-semibold mb-2">
-            Infinite render loop detected
-          </p>
-          <p className="text-gray-500 text-sm mb-4">
-            The page rendered {renderCountRef.current} times.
-          </p>
-          <Button onClick={() => window.location.reload()}>
-            Reload Page
-          </Button>
-        </div>
-      </div>
-    );
-  }
+  // Destructure for easier access
+  const { contract, milestones, changeOrders, passthroughCosts, loading, error } = contractData;
+
+  // Helper setters for backward compatibility with existing code
+  const setContract = (contract: Contract | null) => {
+    setContractData(prev => ({ ...prev, contract }));
+  };
+  const setMilestones = (milestones: Milestone[] | ((prev: Milestone[]) => Milestone[])) => {
+    setContractData(prev => ({
+      ...prev,
+      milestones: typeof milestones === 'function' ? milestones(prev.milestones) : milestones
+    }));
+  };
+  const setChangeOrders = (orders: typeof mockChangeOrders | ((prev: typeof mockChangeOrders) => typeof mockChangeOrders)) => {
+    setContractData(prev => ({
+      ...prev,
+      changeOrders: typeof orders === 'function' ? orders(prev.changeOrders) : orders
+    }));
+  };
+  const setPassthroughCosts = (costs: PassthroughCost[]) => {
+    setContractData(prev => ({ ...prev, passthroughCosts: costs }));
+  };
 
   // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
@@ -554,16 +553,13 @@ export default function ContractDetailPage() {
 
     // Mark as fetching IMMEDIATELY to prevent race conditions
     hasFetchedRef.current = true;
-    fetchAttemptsRef.current += 1;
 
     const fetchContractData = async () => {
-      console.log('Fetching contract data...', { contractId, attempt: fetchAttemptsRef.current });
-      setLoading(true);
-      setError(null);
+      console.log('Fetching contract data...', { contractId });
 
       try {
         // Fetch contract with related data
-        const { data: contractData, error: contractError } = await supabase
+        const { data: fetchedData, error: contractError } = await supabase
           .from('contracts')
           .select(`
             *,
@@ -576,25 +572,34 @@ export default function ContractDetailPage() {
 
         if (contractError) {
           console.error('Error fetching contract:', contractError);
-          setError(`Failed to load contract: ${contractError.message}`);
-          setLoading(false);
+          // Single state update for error case
+          setContractData(prev => ({
+            ...prev,
+            error: `Failed to load contract: ${contractError.message}`,
+            loading: false,
+          }));
           return;
         }
 
         console.log('Contract data loaded successfully');
 
-        // Batch all state updates together to prevent multiple renders
-        startTransition(() => {
-          setContract(contractData);
-          setMilestones(contractData.milestones || []);
-          setChangeOrders(contractData.change_orders || []);
-          setPassthroughCosts(contractData.passthrough_costs || []);
-          setLoading(false);
+        // Single state update - all data at once to prevent multiple renders
+        setContractData({
+          contract: fetchedData,
+          milestones: fetchedData.milestones || [],
+          changeOrders: fetchedData.change_orders || mockChangeOrders,
+          passthroughCosts: fetchedData.passthrough_costs || [],
+          loading: false,
+          error: null,
         });
       } catch (error) {
         console.error('Error:', error);
-        setError('An unexpected error occurred');
-        setLoading(false);
+        // Single state update for exception case
+        setContractData(prev => ({
+          ...prev,
+          error: 'An unexpected error occurred',
+          loading: false,
+        }));
       }
     };
 
