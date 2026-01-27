@@ -314,7 +314,7 @@ const mockMilestones = [
 ];
 
 // NEW: Pass-through costs mock data
-const mockPassthroughCosts = [
+const passthroughCosts = [
   {
     id: 'pt1',
     category: 'travel' as CostCategory,
@@ -457,12 +457,25 @@ export default function ContractDetailPage() {
   const [contract, setContract] = useState<Contract | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
+  const [passthroughCosts, setPassthroughCosts] = useState<PassthroughCost[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
   const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
+  const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
+  const [editingPTC, setEditingPTC] = useState<PassthroughCost | null>(null);
+  const [ptcFormData, setPtcFormData] = useState({
+    category: 'travel' as CostCategory,
+    description: '',
+    passthrough_type: 'one_time' as PassthroughType,
+    budgeted_total: 0,
+    budgeted_per_period: 0,
+    actual_spent: 0,
+    currency: 'EUR',
+    notes: '',
+  });
   const [selectedInflationYear, setSelectedInflationYear] = useState<number>(new Date().getFullYear());
   const [inflationRate, setInflationRate] = useState<number | null>(null);
   const [manualInflationRate, setManualInflationRate] = useState<number | null>(null);
@@ -501,7 +514,8 @@ export default function ContractDetailPage() {
           .select(`
             *,
             milestones(*),
-            change_orders(*)
+            change_orders(*),
+            passthrough_costs(*)
           `)
           .eq('id', params.id)
           .single();
@@ -516,6 +530,7 @@ export default function ContractDetailPage() {
         setContract(contractData);
         setMilestones(contractData.milestones || []);
         setChangeOrders(contractData.change_orders || []);
+        setPassthroughCosts(contractData.passthrough_costs || []);
       } catch (error) {
         console.error('Error:', error);
         toast.error('An error occurred');
@@ -979,7 +994,7 @@ export default function ContractDetailPage() {
       // Calculate PTC change if adjustments are present
       if (includePtcAdjustments && coFormData.ptc_adjustments && coFormData.ptc_adjustments.length > 0) {
         ptcChange = coFormData.ptc_adjustments.reduce((sum, adj) => {
-          const ptc = mockPassthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+          const ptc = passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
           const change = adj.new_budget - (ptc?.budgeted_total || 0);
           return sum + change;
         }, 0);
@@ -1109,7 +1124,7 @@ export default function ContractDetailPage() {
       // 6. Handle pass-through adjustments
       if (includePtcAdjustments && coFormData.ptc_adjustments && coFormData.ptc_adjustments.length > 0) {
         for (const adj of coFormData.ptc_adjustments) {
-          const ptc = mockPassthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+          const ptc = passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
           if (!ptc) continue;
 
           // Create PTC adjustment record
@@ -1181,6 +1196,199 @@ export default function ContractDetailPage() {
     }
   }, [isApplyInflationOpen, selectedInflationYear]);
 
+  // Pass-through Cost handlers
+  const handleAddPTC = async () => {
+    if (!user || !contract) return;
+
+    if (!ptcFormData.description || !ptcFormData.category) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const ptcData = {
+        contract_id: contract.id,
+        category: ptcFormData.category,
+        description: ptcFormData.description,
+        passthrough_type: ptcFormData.passthrough_type,
+        budgeted_total: ptcFormData.budgeted_total,
+        budgeted_per_period: ptcFormData.budgeted_per_period || null,
+        actual_spent: ptcFormData.actual_spent,
+        currency: ptcFormData.currency,
+        notes: ptcFormData.notes || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: newPTC, error } = await supabase
+        .from('passthrough_costs')
+        .insert([ptcData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding PTC:', error);
+        toast.error('Failed to add pass-through cost');
+        return;
+      }
+
+      // Add audit log
+      await supabase.from('audit_log').insert([
+        {
+          table_name: 'passthrough_costs',
+          record_id: newPTC.id,
+          action: 'create',
+          old_values: null,
+          new_values: ptcData,
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      setPassthroughCosts([...passthroughCosts, newPTC]);
+      toast.success('Pass-through cost added');
+      setIsAddPTCOpen(false);
+      resetPTCForm();
+    } catch (error) {
+      console.error('Error adding PTC:', error);
+      toast.error('Failed to add pass-through cost');
+    }
+  };
+
+  const handleEditPTC = (ptc: PassthroughCost) => {
+    setEditingPTC(ptc);
+    setPtcFormData({
+      category: ptc.category,
+      description: ptc.description,
+      passthrough_type: ptc.passthrough_type,
+      budgeted_total: ptc.budgeted_total || 0,
+      budgeted_per_period: ptc.budgeted_per_period || 0,
+      actual_spent: ptc.actual_spent,
+      currency: ptc.currency,
+      notes: ptc.notes || '',
+    });
+    setIsAddPTCOpen(true);
+  };
+
+  const handleUpdatePTC = async () => {
+    if (!editingPTC || !user) return;
+
+    try {
+      const oldValues = { ...editingPTC };
+      const newValues = {
+        category: ptcFormData.category,
+        description: ptcFormData.description,
+        passthrough_type: ptcFormData.passthrough_type,
+        budgeted_total: ptcFormData.budgeted_total,
+        budgeted_per_period: ptcFormData.budgeted_per_period || null,
+        actual_spent: ptcFormData.actual_spent,
+        currency: ptcFormData.currency,
+        notes: ptcFormData.notes || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('passthrough_costs')
+        .update(newValues)
+        .eq('id', editingPTC.id);
+
+      if (error) {
+        console.error('Error updating PTC:', error);
+        toast.error('Failed to update pass-through cost');
+        return;
+      }
+
+      // Add audit log
+      await supabase.from('audit_log').insert([
+        {
+          table_name: 'passthrough_costs',
+          record_id: editingPTC.id,
+          action: 'update',
+          old_values: oldValues,
+          new_values: newValues,
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      const updatedPTCs = passthroughCosts.map((ptc) =>
+        ptc.id === editingPTC.id ? { ...ptc, ...newValues } : ptc
+      );
+      setPassthroughCosts(updatedPTCs);
+      toast.success('Pass-through cost updated');
+      setIsAddPTCOpen(false);
+      setEditingPTC(null);
+      resetPTCForm();
+    } catch (error) {
+      console.error('Error updating PTC:', error);
+      toast.error('Failed to update pass-through cost');
+    }
+  };
+
+  const handleDeletePTC = async (ptcId: string) => {
+    if (!confirm('Are you sure you want to delete this pass-through cost?')) {
+      return;
+    }
+
+    if (!user) return;
+
+    try {
+      const ptcToDelete = passthroughCosts.find((ptc) => ptc.id === ptcId);
+
+      const { error } = await supabase
+        .from('passthrough_costs')
+        .delete()
+        .eq('id', ptcId);
+
+      if (error) {
+        console.error('Error deleting PTC:', error);
+        toast.error('Failed to delete pass-through cost');
+        return;
+      }
+
+      // Add audit log
+      if (ptcToDelete) {
+        await supabase.from('audit_log').insert([
+          {
+            table_name: 'passthrough_costs',
+            record_id: ptcId,
+            action: 'delete',
+            old_values: ptcToDelete,
+            new_values: null,
+            user_id: user.id,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      setPassthroughCosts(passthroughCosts.filter((ptc) => ptc.id !== ptcId));
+      toast.success('Pass-through cost deleted');
+    } catch (error) {
+      console.error('Error deleting PTC:', error);
+      toast.error('Failed to delete pass-through cost');
+    }
+  };
+
+  const resetPTCForm = () => {
+    setPtcFormData({
+      category: 'travel' as CostCategory,
+      description: '',
+      passthrough_type: 'one_time' as PassthroughType,
+      budgeted_total: 0,
+      budgeted_per_period: 0,
+      actual_spent: 0,
+      currency: 'EUR',
+      notes: '',
+    });
+    setEditingPTC(null);
+  };
+
+  const handlePTCDialogClose = () => {
+    setIsAddPTCOpen(false);
+    setEditingPTC(null);
+    resetPTCForm();
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1229,7 +1437,7 @@ export default function ContractDetailPage() {
             Milestones ({milestones.length})
           </TabsTrigger>
           <TabsTrigger value="passthrough">
-            Pass-through ({mockPassthroughCosts.length})
+            Pass-through ({passthroughCosts.length})
           </TabsTrigger>
           <TabsTrigger value="linked">
             Linked ({mockLinkedVendors.length})
@@ -1880,7 +2088,7 @@ export default function ContractDetailPage() {
                       <div className="space-y-3">
                         <Label>Pass-Through Cost Adjustments</Label>
                         <div className="border rounded-md p-4 space-y-3 max-h-96 overflow-y-auto">
-                          {mockPassthroughCosts.map((ptc) => {
+                          {passthroughCosts.map((ptc) => {
                             const adjustment = coFormData.ptc_adjustments?.find(
                               (a) => a.passthrough_cost_id === ptc.id
                             );
@@ -2149,7 +2357,7 @@ export default function ContractDetailPage() {
                                 {coFormData.ptc_adjustments.length} category(s)
                               </span>
                               {coFormData.ptc_adjustments.map((adj) => {
-                                const ptc = mockPassthroughCosts.find(
+                                const ptc = passthroughCosts.find(
                                   (p) => p.id === adj.passthrough_cost_id
                                 );
                                 const change = adj.new_budget - (ptc?.budgeted_total || 0);
@@ -2583,7 +2791,7 @@ export default function ContractDetailPage() {
                 Track budgeted vs. actual pass-through expenses
               </p>
             </div>
-            <Button>
+            <Button onClick={() => setIsAddPTCOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Cost Category
             </Button>
@@ -2594,7 +2802,7 @@ export default function ContractDetailPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold">
-                  {formatCurrency(mockPassthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0))}
+                  {formatCurrency(passthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0))}
                 </div>
                 <p className="text-sm text-gray-500">Total Budget</p>
               </CardContent>
@@ -2602,7 +2810,7 @@ export default function ContractDetailPage() {
             <Card>
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-blue-600">
-                  {formatCurrency(mockPassthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0))}
+                  {formatCurrency(passthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0))}
                 </div>
                 <p className="text-sm text-gray-500">Spent to Date</p>
               </CardContent>
@@ -2611,8 +2819,8 @@ export default function ContractDetailPage() {
               <CardContent className="pt-6">
                 <div className="text-2xl font-bold text-green-600">
                   {formatCurrency(
-                    mockPassthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0) -
-                    mockPassthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0)
+                    passthroughCosts.reduce((sum, pt) => sum + (pt.budgeted_total || 0), 0) -
+                    passthroughCosts.reduce((sum, pt) => sum + pt.actual_spent, 0)
                   )}
                 </div>
                 <p className="text-sm text-gray-500">Remaining Budget</p>
@@ -2632,10 +2840,11 @@ export default function ContractDetailPage() {
                     <TableHead className="text-right">Budget</TableHead>
                     <TableHead className="text-right">Spent</TableHead>
                     <TableHead>Utilization</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockPassthroughCosts.map((cost) => {
+                  {passthroughCosts.map((cost) => {
                     const utilization = cost.budgeted_total
                       ? Math.round((cost.actual_spent / cost.budgeted_total) * 100)
                       : 0;
@@ -2674,9 +2883,40 @@ export default function ContractDetailPage() {
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditPTC(cost)}
+                              title="Edit"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeletePTC(cost.id)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
+                  {passthroughCosts.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center py-8">
+                        <p className="text-gray-500">No pass-through costs yet</p>
+                        <p className="text-sm text-gray-400 mt-1">
+                          Click "Add Cost Category" to create your first entry
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </CardContent>
@@ -3247,6 +3487,171 @@ export default function ContractDetailPage() {
               Cancel
             </Button>
             <Button onClick={handleMarkComplete}>Mark Complete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Pass-Through Cost Dialog */}
+      <Dialog open={isAddPTCOpen} onOpenChange={handlePTCDialogClose}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>{editingPTC ? 'Edit' : 'Add'} Pass-Through Cost</DialogTitle>
+            <DialogDescription>
+              Track pass-through expenses and monitor budget utilization
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="ptc_category">Category *</Label>
+                <Select
+                  value={ptcFormData.category}
+                  onValueChange={(value) =>
+                    setPtcFormData({ ...ptcFormData, category: value as CostCategory })
+                  }
+                >
+                  <SelectTrigger id="ptc_category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(costCategoryLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="ptc_type">Type *</Label>
+                <Select
+                  value={ptcFormData.passthrough_type}
+                  onValueChange={(value) =>
+                    setPtcFormData({ ...ptcFormData, passthrough_type: value as PassthroughType })
+                  }
+                >
+                  <SelectTrigger id="ptc_type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="one_time">One-time</SelectItem>
+                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="quarterly">Quarterly</SelectItem>
+                    <SelectItem value="annually">Annually</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ptc_description">Description *</Label>
+              <Input
+                id="ptc_description"
+                placeholder="e.g., Travel expenses for client meetings"
+                value={ptcFormData.description}
+                onChange={(e) => setPtcFormData({ ...ptcFormData, description: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2 col-span-2">
+                <Label htmlFor="ptc_budget">Total Budget *</Label>
+                <Input
+                  id="ptc_budget"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={ptcFormData.budgeted_total || ''}
+                  onChange={(e) =>
+                    setPtcFormData({
+                      ...ptcFormData,
+                      budgeted_total: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="ptc_currency">Currency</Label>
+                <Select
+                  value={ptcFormData.currency}
+                  onValueChange={(value) => setPtcFormData({ ...ptcFormData, currency: value })}
+                >
+                  <SelectTrigger id="ptc_currency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="EUR">EUR (€)</SelectItem>
+                    <SelectItem value="USD">USD ($)</SelectItem>
+                    <SelectItem value="GBP">GBP (£)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {(ptcFormData.passthrough_type === 'monthly' ||
+              ptcFormData.passthrough_type === 'quarterly' ||
+              ptcFormData.passthrough_type === 'annually') && (
+              <div className="grid gap-2">
+                <Label htmlFor="ptc_per_period">Budget per Period</Label>
+                <Input
+                  id="ptc_per_period"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={ptcFormData.budgeted_per_period || ''}
+                  onChange={(e) =>
+                    setPtcFormData({
+                      ...ptcFormData,
+                      budgeted_per_period: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                />
+                <p className="text-xs text-gray-500">
+                  Expected cost per {ptcFormData.passthrough_type.replace('_', ' ')} period
+                </p>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label htmlFor="ptc_actual">Actual Spent</Label>
+              <Input
+                id="ptc_actual"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={ptcFormData.actual_spent || ''}
+                onChange={(e) =>
+                  setPtcFormData({
+                    ...ptcFormData,
+                    actual_spent: parseFloat(e.target.value) || 0,
+                  })
+                }
+              />
+              <p className="text-xs text-gray-500">Amount spent to date</p>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="ptc_notes">Notes</Label>
+              <Textarea
+                id="ptc_notes"
+                placeholder="Optional notes about this cost category..."
+                rows={2}
+                value={ptcFormData.notes}
+                onChange={(e) => setPtcFormData({ ...ptcFormData, notes: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handlePTCDialogClose}>
+              Cancel
+            </Button>
+            <Button onClick={editingPTC ? handleUpdatePTC : handleAddPTC}>
+              {editingPTC ? 'Update' : 'Add'} Cost
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
