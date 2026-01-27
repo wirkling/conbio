@@ -583,17 +583,16 @@ export default function ContractDetailPage() {
 
         console.log('Contract data loaded successfully');
 
-        // Use requestAnimationFrame to space out updates and prevent React error #310
-        // This ensures updates happen in the next frame, preventing "too many renders" error
-        requestAnimationFrame(() => {
-          startTransition(() => {
-            setContract(contractData);
-            setMilestones(contractData.milestones || []);
-            setChangeOrders(contractData.change_orders || []);
-            setPassthroughCosts(contractData.passthrough_costs || []);
-            setLoading(false);
-          });
-        });
+        // Set data immediately
+        setContract(contractData);
+        setMilestones(contractData.milestones || []);
+        setChangeOrders(contractData.change_orders || []);
+        setPassthroughCosts(contractData.passthrough_costs || []);
+
+        // Delay setLoading(false) to space out renders and prevent React error #310
+        setTimeout(() => {
+          setLoading(false);
+        }, 100);
       } catch (error) {
         console.error('Error:', error);
         setError('An unexpected error occurred');
