@@ -73,6 +73,7 @@ import { generateInflationEmail } from '@/lib/utils/email-templates';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -448,7 +449,7 @@ const isCustomBonusMalus = (
   return terms?.type === 'custom';
 };
 
-export default function ContractDetailPage() {
+function ContractDetailPageInner() {
   const params = useParams();
   const contractId = params.id as string;
   const router = useRouter();
@@ -458,6 +459,14 @@ export default function ContractDetailPage() {
   const hasFetchedRef = useRef(false);
   const fetchAttemptsRef = useRef(0);
   const renderCountRef = useRef(0);
+
+  // Data state
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
+  const [passthroughCosts, setPassthroughCosts] = useState<PassthroughCost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Render counter to detect infinite loops
   renderCountRef.current += 1;
@@ -489,14 +498,6 @@ export default function ContractDetailPage() {
       </div>
     );
   }
-
-  // Data state
-  const [contract, setContract] = useState<Contract | null>(null);
-  const [milestones, setMilestones] = useState<Milestone[]>([]);
-  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
-  const [passthroughCosts, setPassthroughCosts] = useState<PassthroughCost[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
@@ -4055,5 +4056,13 @@ export default function ContractDetailPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function ContractDetailPage() {
+  return (
+    <ErrorBoundary>
+      <ContractDetailPageInner />
+    </ErrorBoundary>
   );
 }
