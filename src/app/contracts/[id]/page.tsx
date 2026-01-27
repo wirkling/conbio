@@ -601,6 +601,62 @@ export default function ContractDetailPage() {
     return null;
   };
 
+  // Helper function to download document from Supabase Storage
+  const handleDownloadDocument = async (documentPath: string, fileName?: string) => {
+    try {
+      const { data, error} = await supabase.storage
+        .from('contract-documents')
+        .download(documentPath);
+
+      if (error) {
+        console.error('Error downloading document:', error);
+        toast.error('Failed to download document');
+        return;
+      }
+
+      // Create blob URL and trigger download
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || documentPath.split('/').pop() || 'document';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      toast.error('Failed to download document');
+    }
+  };
+
+  // Helper function to download change order document
+  const handleDownloadCODocument = async (documentPath: string, fileName?: string) => {
+    try {
+      const { data, error } = await supabase.storage
+        .from('change-orders')
+        .download(documentPath);
+
+      if (error) {
+        console.error('Error downloading CO document:', error);
+        toast.error('Failed to download document');
+        return;
+      }
+
+      // Create blob URL and trigger download
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || documentPath.split('/').pop() || 'change-order';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading CO document:', error);
+      toast.error('Failed to download document');
+    }
+  };
+
   // Fetch inflation rate from Supabase
   const fetchInflationRate = async (year: number) => {
     const rateType = contract.inflation_clause?.rate_type;
@@ -1182,7 +1238,7 @@ export default function ContractDetailPage() {
             Change Orders ({changeOrders.length})
           </TabsTrigger>
           <TabsTrigger value="documents">
-            Documents ({mockDocuments.length})
+            Documents ({contract.document_urls?.length || 0})
           </TabsTrigger>
         </TabsList>
 
@@ -2207,20 +2263,29 @@ export default function ContractDetailPage() {
                       </TableCell>
                       <TableCell>
                         {co.document_url && (
-                          <Button variant="ghost" size="icon" asChild>
-                            <a
-                              href={co.document_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              title={co.is_document_sharepoint ? 'View in SharePoint' : 'Download PDF'}
-                            >
-                              {co.is_document_sharepoint ? (
-                                <ExternalLink className="h-4 w-4 text-blue-600" />
-                              ) : (
+                          <>
+                            {co.is_document_sharepoint ? (
+                              <Button variant="ghost" size="icon" asChild>
+                                <a
+                                  href={co.document_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="View in SharePoint"
+                                >
+                                  <ExternalLink className="h-4 w-4 text-blue-600" />
+                                </a>
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDownloadCODocument(co.document_url!, co.change_order_number || co.title)}
+                                title="Download PDF"
+                              >
                                 <FileText className="h-4 w-4 text-red-600" />
-                              )}
-                            </a>
-                          </Button>
+                              </Button>
+                            )}
+                          </>
                         )}
                       </TableCell>
                     </TableRow>
@@ -2767,43 +2832,45 @@ export default function ContractDetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>File</TableHead>
-                    <TableHead>Size</TableHead>
-                    <TableHead>Uploaded</TableHead>
                     <TableHead className="w-20">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockDocuments.map((doc) => (
-                    <TableRow key={doc.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <FileText className="h-8 w-8 text-red-500" />
-                          <div>
-                            <p className="font-medium">{doc.file_name}</p>
-                            {doc.is_primary && (
-                              <Badge variant="outline" className="text-xs">Primary</Badge>
-                            )}
+                  {(contract.document_urls || []).map((docPath, index) => {
+                    const fileName = docPath.split('/').pop() || 'document';
+                    return (
+                      <TableRow key={index}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <FileText className="h-8 w-8 text-red-500" />
+                            <div>
+                              <p className="font-medium">{fileName}</p>
+                              <p className="text-xs text-gray-500">{docPath}</p>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>{formatFileSize(doc.file_size_bytes)}</TableCell>
-                      <TableCell>{formatDate(doc.uploaded_at)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button variant="ghost" size="icon">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="text-red-500">
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {mockDocuments.length === 0 && (
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDownloadDocument(docPath, fileName)}
+                              title="Download document"
+                            >
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {(!contract.document_urls || contract.document_urls.length === 0) && (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center py-8">
+                      <TableCell colSpan={2} className="text-center py-8">
                         <p className="text-gray-500">No documents uploaded</p>
+                        <p className="text-sm text-gray-400 mt-1">
+                          Use the Upload Document button to add files
+                        </p>
                       </TableCell>
                     </TableRow>
                   )}
