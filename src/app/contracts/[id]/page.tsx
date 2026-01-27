@@ -601,15 +601,8 @@ export default function ContractDetailPage() {
     return null;
   };
 
-  // Fetch inflation rate from localStorage
-  const fetchInflationRate = (year: number) => {
-    const stored = localStorage.getItem('inflation_rates');
-    if (!stored) {
-      setInflationRate(null);
-      return;
-    }
-
-    const rates = JSON.parse(stored);
+  // Fetch inflation rate from Supabase
+  const fetchInflationRate = async (year: number) => {
     const rateType = contract.inflation_clause?.rate_type;
 
     if (!rateType) {
@@ -617,12 +610,20 @@ export default function ContractDetailPage() {
       return;
     }
 
-    // Find matching rate
-    const matchingRate = rates.find(
-      (r: any) => r.rate_type === rateType && r.year === year
-    );
+    const { data, error } = await supabase
+      .from('inflation_rates')
+      .select('*')
+      .eq('rate_type', rateType)
+      .eq('year', year)
+      .maybeSingle();
 
-    setInflationRate(matchingRate?.rate_percentage || null);
+    if (error) {
+      console.error('Error fetching inflation rate:', error);
+      setInflationRate(null);
+      return;
+    }
+
+    setInflationRate(data?.rate_percentage || null);
     setManualInflationRate(null);
     setIsManualOverride(false);
   };
@@ -761,11 +762,33 @@ export default function ContractDetailPage() {
       };
     });
 
-    setMilestones(updatedMilestones);
+    // Update milestones in database
+    for (const updatedMilestone of updatedMilestones) {
+      await supabase
+        .from('milestones')
+        .update({
+          inflation_adjustments: updatedMilestone.inflation_adjustments,
+          current_value: updatedMilestone.current_value,
+          updated_at: updatedMilestone.updated_at,
+        })
+        .eq('id', updatedMilestone.id);
+    }
 
-    // TODO: In production:
-    // 1. Update milestones in Supabase
-    // 2. Create audit log entry
+    // Create audit log
+    if (user) {
+      await supabase.from('audit_log').insert({
+        entity_type: 'contract',
+        entity_id: contract.id,
+        action: 'update',
+        change_summary: `Applied ${selectedInflationYear} inflation (${effectiveRate}%) to ${applicableMilestones.length} milestones${
+          isManualOverride ? ' (manual override)' : ''
+        }`,
+        user_id: user.id,
+        user_name: user.email,
+      });
+    }
+
+    setMilestones(updatedMilestones);
 
     const overrideText = isManualOverride ? ' (manual override)' : '';
     toast.success(
@@ -779,7 +802,7 @@ export default function ContractDetailPage() {
 
   // Handle Mark Complete action
   const handleMarkComplete = async () => {
-    if (!selectedMilestone) return;
+    if (!selectedMilestone || !contract || !user) return;
 
     // Calculate bonus/malus adjustment
     const completedMilestone: Milestone = {
@@ -806,6 +829,37 @@ export default function ContractDetailPage() {
       }
     }
 
+    // Update milestone in database
+    const { error } = await supabase
+      .from('milestones')
+      .update({
+        status: 'completed',
+        completed_date: completionDate,
+        adjustment_type: adjustmentUpdate?.adjustment_type,
+        adjustment_amount: adjustmentUpdate?.adjustment_amount,
+        adjustment_percentage: adjustmentUpdate?.adjustment_percentage,
+        adjustment_reason: adjustmentUpdate?.adjustment_reason,
+        adjustment_calculated_at: adjustmentUpdate ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', selectedMilestone.id);
+
+    if (error) {
+      console.error('Error marking milestone complete:', error);
+      toast.error('Failed to mark milestone complete');
+      return;
+    }
+
+    // Create audit log
+    await supabase.from('audit_log').insert({
+      entity_type: 'milestone',
+      entity_id: selectedMilestone.id,
+      action: 'complete',
+      change_summary: `Completed milestone: ${selectedMilestone.name}${adjustmentMessage}`,
+      user_id: user.id,
+      user_name: user.email,
+    });
+
     // Update the milestone in state
     const updatedMilestone: Milestone = {
       ...completedMilestone,
@@ -816,10 +870,6 @@ export default function ContractDetailPage() {
     setMilestones((prev) =>
       prev.map((m) => (m.id === selectedMilestone.id ? updatedMilestone : m))
     );
-
-    // TODO: In production:
-    // 1. Update milestone in Supabase with completion date and adjustment fields
-    // 2. Create audit log entry
 
     toast.success(`Milestone marked complete${adjustmentMessage}`);
     setIsMarkCompleteOpen(false);
@@ -833,19 +883,28 @@ export default function ContractDetailPage() {
       return;
     }
 
+    if (!contract || !user) return;
+
     try {
       // 1. Upload document if provided
       let documentUrl = coFormData.document_sharepoint_url || null;
       let isSharePoint = !!coFormData.document_sharepoint_url;
 
       if (coFormData.document_file) {
-        // TODO: Implement file upload to storage (Supabase Storage or Azure Blob)
-        // const { data, error } = await supabase.storage
-        //   .from('change-orders')
-        //   .upload(`${contract.id}/${coFormData.document_file.name}`, coFormData.document_file);
-        // documentUrl = data?.path || null;
-        documentUrl = `/mock-storage/${coFormData.document_file.name}`;
-        isSharePoint = false;
+        const filePath = `${contract.id}/${Date.now()}_${coFormData.document_file.name}`;
+
+        const { data, error: uploadError } = await supabase.storage
+          .from('change-orders')
+          .upload(filePath, coFormData.document_file);
+
+        if (uploadError) {
+          console.error('Upload error:', uploadError);
+          // Continue anyway - document is optional
+          toast.warning('Document upload failed, but change order will be created');
+        } else {
+          documentUrl = filePath;
+          isSharePoint = false;
+        }
       }
 
       // 2. Calculate total impacts
@@ -879,32 +938,37 @@ export default function ContractDetailPage() {
       }
 
       // 3. Create change order
-      const newChangeOrder = {
-        id: `co-${Date.now()}`,
-        contract_id: contract.id,
-        change_order_number: coFormData.change_order_number || null,
-        title: coFormData.title,
-        description: coFormData.description || null,
-        effective_date: coFormData.effective_date || new Date().toISOString().split('T')[0],
-        co_type: finalCoType,
-        direct_cost_change: directCostChange,
-        ptc_change: ptcChange,
-        value_change: directCostChange, // Backward compatibility
-        document_url: documentUrl,
-        is_document_sharepoint: isSharePoint,
-        invoiced_immediately: coFormData.invoiced_immediately || false,
-        invoiced_date: coFormData.invoiced_immediately
-          ? new Date().toISOString().split('T')[0]
-          : null,
-        created_at: new Date().toISOString(),
-        created_by: null,
-      };
+      const { data: savedCO, error: coError } = await supabase
+        .from('change_orders')
+        .insert([{
+          contract_id: contract.id,
+          change_order_number: coFormData.change_order_number || null,
+          title: coFormData.title,
+          description: coFormData.description || null,
+          effective_date: coFormData.effective_date || new Date().toISOString().split('T')[0],
+          co_type: finalCoType,
+          direct_cost_change: directCostChange,
+          ptc_change: ptcChange,
+          value_change: directCostChange, // Backward compatibility
+          document_url: documentUrl,
+          is_document_sharepoint: isSharePoint,
+          invoiced_immediately: coFormData.invoiced_immediately || false,
+          invoiced_date: coFormData.invoiced_immediately
+            ? new Date().toISOString().split('T')[0]
+            : null,
+          created_by: user.id,
+        }])
+        .select()
+        .single();
 
-      // TODO: Insert into Supabase
-      // await supabase.from('change_orders').insert([newChangeOrder]);
+      if (coError) {
+        console.error('Error creating change order:', coError);
+        toast.error('Failed to create change order');
+        return;
+      }
 
       // Add to local state
-      setChangeOrders((prev: typeof mockChangeOrders) => [...prev, newChangeOrder]);
+      setChangeOrders((prev: typeof mockChangeOrders) => [...prev, savedCO]);
 
       // 4. Handle milestone adjustments
       if (
@@ -915,23 +979,30 @@ export default function ContractDetailPage() {
           const milestone = milestones.find((m) => m.id === adj.milestone_id);
           if (!milestone) continue;
 
-          // TODO: Update milestone
-          // await supabase.from('milestones').update({
-          //   current_value: adj.new_value,
-          //   current_due_date: adj.new_due_date,
-          //   updated_at: new Date().toISOString(),
-          // }).eq('id', milestone.id);
+          // Update milestone
+          const { error: updateError } = await supabase
+            .from('milestones')
+            .update({
+              current_value: adj.new_value,
+              current_due_date: adj.new_due_date,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', milestone.id);
 
-          // TODO: Create milestone change record
-          // await supabase.from('milestone_changes').insert({
-          //   milestone_id: milestone.id,
-          //   change_order_id: newChangeOrder.id,
-          //   previous_value: milestone.current_value,
-          //   new_value: adj.new_value,
-          //   previous_due_date: milestone.current_due_date,
-          //   new_due_date: adj.new_due_date,
-          //   change_reason: adj.adjustment_reason,
-          // });
+          if (updateError) {
+            console.error('Error updating milestone:', updateError);
+          }
+
+          // Create milestone change record
+          await supabase.from('milestone_changes').insert({
+            milestone_id: milestone.id,
+            change_order_id: savedCO.id,
+            previous_value: milestone.current_value,
+            new_value: adj.new_value,
+            previous_due_date: milestone.current_due_date,
+            new_due_date: adj.new_due_date,
+            change_reason: adj.adjustment_reason,
+          });
 
           // Update local state
           setMilestones((prev) =>
@@ -951,38 +1022,32 @@ export default function ContractDetailPage() {
 
       // 5. Create new milestone for lump_sum_milestone type
       if (coFormData.co_type === 'lump_sum_milestone') {
-        const newMilestone: Milestone = {
-          id: `m-${Date.now()}`,
-          contract_id: contract.id,
-          name: coFormData.new_milestone_name || `${coFormData.title} - Milestone`,
-          description: null,
-          milestone_number: milestones.length + 1,
-          original_value: coFormData.direct_cost_change || 0,
-          original_due_date: coFormData.new_milestone_due_date || null,
-          current_value: coFormData.direct_cost_change || 0,
-          current_due_date: coFormData.new_milestone_due_date || null,
-          status: 'pending' as MilestoneStatus,
-          completed_date: null,
-          invoiced: false,
-          invoiced_date: null,
-          paid: false,
-          paid_date: null,
-          inflation_adjustments: [],
-          inflation_superseded_by_co: false,
-          adjustment_type: null,
-          adjustment_amount: null,
-          adjustment_percentage: null,
-          adjustment_reason: null,
-          adjustment_calculated_at: null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
+        const { data: newMilestone, error: milestoneError } = await supabase
+          .from('milestones')
+          .insert([{
+            contract_id: contract.id,
+            name: coFormData.new_milestone_name || `${coFormData.title} - Milestone`,
+            description: null,
+            milestone_number: milestones.length + 1,
+            original_value: coFormData.direct_cost_change || 0,
+            original_due_date: coFormData.new_milestone_due_date || null,
+            current_value: coFormData.direct_cost_change || 0,
+            current_due_date: coFormData.new_milestone_due_date || null,
+            status: 'pending',
+            invoiced: false,
+            paid: false,
+            inflation_adjustments: [],
+            inflation_superseded_by_co: false,
+          }])
+          .select()
+          .single();
 
-        // TODO: Insert into Supabase
-        // await supabase.from('milestones').insert([newMilestone]);
-
-        // Update local state
-        setMilestones((prev) => [...prev, newMilestone]);
+        if (milestoneError) {
+          console.error('Error creating milestone:', milestoneError);
+        } else if (newMilestone) {
+          // Update local state
+          setMilestones((prev) => [...prev, newMilestone as Milestone]);
+        }
       }
 
       // 6. Handle pass-through adjustments
@@ -991,27 +1056,52 @@ export default function ContractDetailPage() {
           const ptc = mockPassthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
           if (!ptc) continue;
 
-          // TODO: Create PTC adjustment record
-          // await supabase.from('change_order_passthrough_adjustments').insert({
-          //   change_order_id: newChangeOrder.id,
-          //   passthrough_cost_id: ptc.id,
-          //   previous_budget: ptc.budgeted_total,
-          //   new_budget: adj.new_budget,
-          //   adjustment_reason: adj.adjustment_reason,
-          // });
+          // Create PTC adjustment record
+          await supabase.from('change_order_passthrough_adjustments').insert({
+            change_order_id: savedCO.id,
+            passthrough_cost_id: ptc.id,
+            previous_budget: ptc.budgeted_total,
+            new_budget: adj.new_budget,
+            adjustment_reason: adj.adjustment_reason,
+          });
 
-          // TODO: Update PTC budget
-          // await supabase.from('passthrough_costs').update({
-          //   budgeted_total: adj.new_budget,
-          //   updated_at: new Date().toISOString(),
-          // }).eq('id', ptc.id);
+          // Update PTC budget
+          await supabase.from('passthrough_costs').update({
+            budgeted_total: adj.new_budget,
+            updated_at: new Date().toISOString(),
+          }).eq('id', ptc.id);
         }
       }
 
       // 7. Create audit log entry
-      // TODO: Add to audit_log table
+      await supabase.from('audit_log').insert({
+        entity_type: 'change_order',
+        entity_id: savedCO.id,
+        action: 'create',
+        change_summary: `Created ${savedCO.co_type} change order: ${savedCO.title}`,
+        user_id: user.id,
+        user_name: user.email,
+      });
 
       toast.success('Change Order created successfully');
+
+      // Refresh data from database
+      const { data: refreshedData } = await supabase
+        .from('contracts')
+        .select(`
+          *,
+          milestones(*),
+          change_orders(*)
+        `)
+        .eq('id', contract.id)
+        .single();
+
+      if (refreshedData) {
+        setContract(refreshedData);
+        setMilestones(refreshedData.milestones || []);
+        setChangeOrders(refreshedData.change_orders || []);
+      }
+
       setIsAddChangeOrderOpen(false);
       setCoFormStep(1);
       setCoFormData({
@@ -1020,9 +1110,6 @@ export default function ContractDetailPage() {
         ptc_adjustments: [],
       });
       setIncludePtcAdjustments(false);
-
-      // Refresh data
-      // TODO: Fetch updated contract, milestones, change orders
     } catch (error) {
       console.error('Error creating change order:', error);
       toast.error('Failed to create change order');
@@ -1032,7 +1119,9 @@ export default function ContractDetailPage() {
   // Load inflation rate when dialog opens or year changes
   useEffect(() => {
     if (isApplyInflationOpen && selectedInflationYear) {
-      fetchInflationRate(selectedInflationYear);
+      fetchInflationRate(selectedInflationYear).catch((error) => {
+        console.error('Error in fetchInflationRate:', error);
+      });
     }
   }, [isApplyInflationOpen, selectedInflationYear]);
 

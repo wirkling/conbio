@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Card,
   CardContent,
@@ -98,7 +100,9 @@ const defaultInflationRates: InflationRate[] = [
 
 export default function InflationRatesPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [rates, setRates] = useState<InflationRate[]>([]);
+  const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [editingRate, setEditingRate] = useState<InflationRate | null>(null);
   const [formData, setFormData] = useState({
@@ -109,44 +113,66 @@ export default function InflationRatesPage() {
     notes: '',
   });
 
-  // Load rates from localStorage on mount
+  // Redirect if not authenticated
   useEffect(() => {
-    const stored = localStorage.getItem('inflation_rates');
-    if (stored) {
-      setRates(JSON.parse(stored));
-    } else {
-      // Initialize with defaults
-      setRates(defaultInflationRates);
-      localStorage.setItem('inflation_rates', JSON.stringify(defaultInflationRates));
+    if (!authLoading && !user) {
+      router.push('/login');
     }
-  }, []);
+  }, [authLoading, user, router]);
 
-  // Save rates to localStorage whenever they change
-  const saveRates = (newRates: InflationRate[]) => {
-    setRates(newRates);
-    localStorage.setItem('inflation_rates', JSON.stringify(newRates));
-  };
+  // Load rates from Supabase
+  useEffect(() => {
+    if (!user) return;
 
-  const handleAdd = () => {
+    const fetchRates = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('inflation_rates')
+        .select('*')
+        .order('year', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching inflation rates:', error);
+        toast.error('Failed to load inflation rates');
+      } else {
+        setRates(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchRates();
+  }, [user]);
+
+  const handleAdd = async () => {
     if (!formData.rate_type || !formData.year || formData.rate_percentage === 0) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    const newRate: InflationRate = {
-      id: Date.now().toString(),
-      rate_type: formData.rate_type,
-      year: formData.year,
-      rate_percentage: formData.rate_percentage,
-      effective_from: `${formData.year}-01-01`,
-      effective_until: `${formData.year}-12-31`,
-      source_url: formData.source_url || null,
-      notes: formData.notes || null,
-      created_at: new Date().toISOString(),
-      created_by: null,
-    };
+    if (!user) return;
 
-    saveRates([...rates, newRate]);
+    const { data, error } = await supabase
+      .from('inflation_rates')
+      .insert([{
+        rate_type: formData.rate_type,
+        year: formData.year,
+        rate_percentage: formData.rate_percentage,
+        effective_from: `${formData.year}-01-01`,
+        effective_until: `${formData.year}-12-31`,
+        source_url: formData.source_url || null,
+        notes: formData.notes || null,
+        created_by: user.id,
+      }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error adding rate:', error);
+      toast.error('Failed to add inflation rate');
+      return;
+    }
+
+    setRates([...rates, data]);
     toast.success('Inflation rate added');
     setIsAddDialogOpen(false);
     resetForm();
@@ -164,8 +190,27 @@ export default function InflationRatesPage() {
     setIsAddDialogOpen(true);
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     if (!editingRate) return;
+
+    const { error } = await supabase
+      .from('inflation_rates')
+      .update({
+        rate_type: formData.rate_type,
+        year: formData.year,
+        rate_percentage: formData.rate_percentage,
+        effective_from: `${formData.year}-01-01`,
+        effective_until: `${formData.year}-12-31`,
+        source_url: formData.source_url || null,
+        notes: formData.notes || null,
+      })
+      .eq('id', editingRate.id);
+
+    if (error) {
+      console.error('Error updating rate:', error);
+      toast.error('Failed to update inflation rate');
+      return;
+    }
 
     const updatedRates = rates.map((r) =>
       r.id === editingRate.id
@@ -182,18 +227,31 @@ export default function InflationRatesPage() {
         : r
     );
 
-    saveRates(updatedRates);
+    setRates(updatedRates);
     toast.success('Inflation rate updated');
     setIsAddDialogOpen(false);
     setEditingRate(null);
     resetForm();
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this inflation rate?')) {
-      saveRates(rates.filter((r) => r.id !== id));
-      toast.success('Inflation rate deleted');
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this inflation rate?')) {
+      return;
     }
+
+    const { error } = await supabase
+      .from('inflation_rates')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      console.error('Error deleting rate:', error);
+      toast.error('Failed to delete inflation rate');
+      return;
+    }
+
+    setRates(rates.filter((r) => r.id !== id));
+    toast.success('Inflation rate deleted');
   };
 
   const resetForm = () => {
