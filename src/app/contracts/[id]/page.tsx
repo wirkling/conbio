@@ -476,6 +476,15 @@ export default function ContractDetailPage() {
     currency: 'EUR',
     notes: '',
   });
+  const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+  const [milestoneFormData, setMilestoneFormData] = useState({
+    name: '',
+    milestone_number: 0,
+    original_value: 0,
+    original_due_date: '',
+    description: '',
+  });
   const [selectedInflationYear, setSelectedInflationYear] = useState<number>(new Date().getFullYear());
   const [inflationRate, setInflationRate] = useState<number | null>(null);
   const [manualInflationRate, setManualInflationRate] = useState<number | null>(null);
@@ -1387,6 +1396,202 @@ export default function ContractDetailPage() {
     setIsAddPTCOpen(false);
     setEditingPTC(null);
     resetPTCForm();
+  };
+
+  // Milestone handlers
+  const handleAddMilestone = async () => {
+    if (!user || !contract) return;
+
+    if (!milestoneFormData.name || !milestoneFormData.original_value) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const milestoneData = {
+        contract_id: contract.id,
+        name: milestoneFormData.name,
+        milestone_number: milestoneFormData.milestone_number || milestones.length + 1,
+        original_value: milestoneFormData.original_value,
+        original_due_date: milestoneFormData.original_due_date || null,
+        current_value: milestoneFormData.original_value,
+        current_due_date: milestoneFormData.original_due_date || null,
+        status: 'pending' as MilestoneStatus,
+        completed_date: null,
+        invoiced: false,
+        invoiced_date: null,
+        paid: false,
+        paid_date: null,
+        inflation_adjustments: [],
+        inflation_superseded_by_co: false,
+        adjustment_type: null,
+        adjustment_amount: null,
+        adjustment_percentage: null,
+        adjustment_reason: null,
+        adjustment_calculated_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: newMilestone, error } = await supabase
+        .from('milestones')
+        .insert([milestoneData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding milestone:', error);
+        toast.error('Failed to add milestone');
+        return;
+      }
+
+      // Add audit log
+      await supabase.from('audit_log').insert([
+        {
+          table_name: 'milestones',
+          record_id: newMilestone.id,
+          action: 'create',
+          old_values: null,
+          new_values: milestoneData,
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      setMilestones([...milestones, newMilestone]);
+      toast.success('Milestone added');
+      setIsAddMilestoneOpen(false);
+      resetMilestoneForm();
+    } catch (error) {
+      console.error('Error adding milestone:', error);
+      toast.error('Failed to add milestone');
+    }
+  };
+
+  const handleEditMilestone = (milestone: Milestone) => {
+    setEditingMilestone(milestone);
+    setMilestoneFormData({
+      name: milestone.name,
+      milestone_number: milestone.milestone_number,
+      original_value: milestone.original_value || 0,
+      original_due_date: milestone.original_due_date || '',
+      description: '',
+    });
+    setIsAddMilestoneOpen(true);
+  };
+
+  const handleUpdateMilestone = async () => {
+    if (!editingMilestone || !user) return;
+
+    try {
+      const oldValues = { ...editingMilestone };
+      const newValues = {
+        name: milestoneFormData.name,
+        milestone_number: milestoneFormData.milestone_number,
+        original_value: milestoneFormData.original_value,
+        original_due_date: milestoneFormData.original_due_date || null,
+        current_value: milestoneFormData.original_value,
+        current_due_date: milestoneFormData.original_due_date || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { error } = await supabase
+        .from('milestones')
+        .update(newValues)
+        .eq('id', editingMilestone.id);
+
+      if (error) {
+        console.error('Error updating milestone:', error);
+        toast.error('Failed to update milestone');
+        return;
+      }
+
+      // Add audit log
+      await supabase.from('audit_log').insert([
+        {
+          table_name: 'milestones',
+          record_id: editingMilestone.id,
+          action: 'update',
+          old_values: oldValues,
+          new_values: newValues,
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      const updatedMilestones = milestones.map((m) =>
+        m.id === editingMilestone.id ? { ...m, ...newValues } : m
+      );
+      setMilestones(updatedMilestones);
+      toast.success('Milestone updated');
+      setIsAddMilestoneOpen(false);
+      setEditingMilestone(null);
+      resetMilestoneForm();
+    } catch (error) {
+      console.error('Error updating milestone:', error);
+      toast.error('Failed to update milestone');
+    }
+  };
+
+  const handleDeleteMilestone = async (milestoneId: string) => {
+    if (!confirm('Are you sure you want to delete this milestone? This action cannot be undone.')) {
+      return;
+    }
+
+    if (!user) return;
+
+    try {
+      const milestoneToDelete = milestones.find((m) => m.id === milestoneId);
+
+      const { error } = await supabase
+        .from('milestones')
+        .delete()
+        .eq('id', milestoneId);
+
+      if (error) {
+        console.error('Error deleting milestone:', error);
+        toast.error('Failed to delete milestone');
+        return;
+      }
+
+      // Add audit log
+      if (milestoneToDelete) {
+        await supabase.from('audit_log').insert([
+          {
+            table_name: 'milestones',
+            record_id: milestoneId,
+            action: 'delete',
+            old_values: milestoneToDelete,
+            new_values: null,
+            user_id: user.id,
+            timestamp: new Date().toISOString(),
+          },
+        ]);
+      }
+
+      setMilestones(milestones.filter((m) => m.id !== milestoneId));
+      toast.success('Milestone deleted');
+    } catch (error) {
+      console.error('Error deleting milestone:', error);
+      toast.error('Failed to delete milestone');
+    }
+  };
+
+  const resetMilestoneForm = () => {
+    setMilestoneFormData({
+      name: '',
+      milestone_number: 0,
+      original_value: 0,
+      original_due_date: '',
+      description: '',
+    });
+    setEditingMilestone(null);
+  };
+
+  const handleMilestoneDialogClose = () => {
+    setIsAddMilestoneOpen(false);
+    setEditingMilestone(null);
+    resetMilestoneForm();
   };
 
   return (
@@ -2532,7 +2737,7 @@ export default function ContractDetailPage() {
                 Track deliverables and payment schedules
               </p>
             </div>
-            <Button>
+            <Button onClick={() => setIsAddMilestoneOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Milestone
             </Button>
@@ -2758,20 +2963,39 @@ export default function ContractDetailPage() {
                           </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          {milestone.status !== 'completed' && (
+                          <div className="flex items-center justify-end gap-1">
+                            {milestone.status !== 'completed' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedMilestone(milestone);
+                                  setCompletionDate(new Date().toISOString().split('T')[0]);
+                                  setIsMarkCompleteOpen(true);
+                                }}
+                              >
+                                <CheckCircle2 className="mr-2 h-3 w-3" />
+                                Mark Complete
+                              </Button>
+                            )}
                             <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedMilestone(milestone);
-                                setCompletionDate(new Date().toISOString().split('T')[0]);
-                                setIsMarkCompleteOpen(true);
-                              }}
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEditMilestone(milestone)}
+                              title="Edit"
                             >
-                              <CheckCircle2 className="mr-2 h-3 w-3" />
-                              Mark Complete
+                              <Edit className="h-4 w-4" />
                             </Button>
-                          )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDeleteMilestone(milestone.id)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                              title="Delete"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -3651,6 +3875,90 @@ export default function ContractDetailPage() {
             </Button>
             <Button onClick={editingPTC ? handleUpdatePTC : handleAddPTC}>
               {editingPTC ? 'Update' : 'Add'} Cost
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Milestone Dialog */}
+      <Dialog open={isAddMilestoneOpen} onOpenChange={handleMilestoneDialogClose}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>{editingMilestone ? 'Edit' : 'Add'} Milestone</DialogTitle>
+            <DialogDescription>
+              Define a deliverable or payment milestone for this contract
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="milestone_number">Milestone # *</Label>
+                <Input
+                  id="milestone_number"
+                  type="number"
+                  min="1"
+                  placeholder="1"
+                  value={milestoneFormData.milestone_number || ''}
+                  onChange={(e) =>
+                    setMilestoneFormData({
+                      ...milestoneFormData,
+                      milestone_number: parseInt(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="milestone_value">Value (€) *</Label>
+                <Input
+                  id="milestone_value"
+                  type="number"
+                  step="0.01"
+                  placeholder="0.00"
+                  value={milestoneFormData.original_value || ''}
+                  onChange={(e) =>
+                    setMilestoneFormData({
+                      ...milestoneFormData,
+                      original_value: parseFloat(e.target.value) || 0,
+                    })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="milestone_name">Name / Description *</Label>
+              <Input
+                id="milestone_name"
+                placeholder="e.g., Requirements & Design Phase"
+                value={milestoneFormData.name}
+                onChange={(e) =>
+                  setMilestoneFormData({ ...milestoneFormData, name: e.target.value })
+                }
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="milestone_due">Due Date</Label>
+              <Input
+                id="milestone_due"
+                type="date"
+                value={milestoneFormData.original_due_date}
+                onChange={(e) =>
+                  setMilestoneFormData({ ...milestoneFormData, original_due_date: e.target.value })
+                }
+              />
+              <p className="text-xs text-gray-500">Optional - set expected completion date</p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleMilestoneDialogClose}>
+              Cancel
+            </Button>
+            <Button onClick={editingMilestone ? handleUpdateMilestone : handleAddMilestone}>
+              {editingMilestone ? 'Update' : 'Add'} Milestone
             </Button>
           </DialogFooter>
         </DialogContent>
