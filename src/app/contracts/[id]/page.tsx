@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -574,14 +574,19 @@ export default function ContractDetailPage() {
         }
 
         console.log('Contract data loaded successfully');
-        setContract(contractData);
-        setMilestones(contractData.milestones || []);
-        setChangeOrders(contractData.change_orders || []);
-        setPassthroughCosts(contractData.passthrough_costs || []);
+
+        // Batch all state updates together using startTransition
+        // This prevents rapid successive re-renders that trigger React error #310
+        startTransition(() => {
+          setContract(contractData);
+          setMilestones(contractData.milestones || []);
+          setChangeOrders(contractData.change_orders || []);
+          setPassthroughCosts(contractData.passthrough_costs || []);
+          setLoading(false);
+        });
       } catch (error) {
         console.error('Error:', error);
         setError('An unexpected error occurred');
-      } finally {
         setLoading(false);
       }
     };
