@@ -520,14 +520,8 @@ export default function ContractDetailPage() {
     if (!user || !contractId) return;
     if (hasFetchedRef.current) return; // Prevent multiple fetches
 
-    // Circuit breaker: stop after 3 attempts
-    if (fetchAttemptsRef.current >= 3) {
-      console.error('Too many fetch attempts, stopping to prevent infinite loop');
-      setError('Failed to load contract after multiple attempts');
-      setLoading(false);
-      return;
-    }
-
+    // Mark as fetching IMMEDIATELY to prevent race conditions
+    hasFetchedRef.current = true;
     fetchAttemptsRef.current += 1;
 
     const fetchContractData = async () => {
@@ -551,7 +545,6 @@ export default function ContractDetailPage() {
         if (contractError) {
           console.error('Error fetching contract:', contractError);
           setError(`Failed to load contract: ${contractError.message}`);
-          hasFetchedRef.current = true; // Mark as attempted even on error
           setLoading(false);
           return;
         }
@@ -561,11 +554,9 @@ export default function ContractDetailPage() {
         setMilestones(contractData.milestones || []);
         setChangeOrders(contractData.change_orders || []);
         setPassthroughCosts(contractData.passthrough_costs || []);
-        hasFetchedRef.current = true; // Mark as successfully fetched
       } catch (error) {
         console.error('Error:', error);
         setError('An unexpected error occurred');
-        hasFetchedRef.current = true; // Mark as attempted even on error
       } finally {
         setLoading(false);
       }
