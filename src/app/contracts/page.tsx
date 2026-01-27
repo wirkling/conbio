@@ -39,7 +39,7 @@ import {
   ChevronRight,
   ExternalLink,
 } from 'lucide-react';
-import { ContractStatus, ContractType } from '@/types/database';
+import { ContractStatus, ContractType, Contract } from '@/types/database';
 
 // Mock data - will be replaced with Supabase queries
 const mockContracts = [
@@ -146,7 +146,7 @@ function ContractsContent() {
   const { user, loading: authLoading } = useAuth();
   const initialQuery = searchParams.get('q') || '';
 
-  const [contracts, setContracts] = useState<any[]>([]);
+  const [contracts, setContracts] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -355,7 +355,7 @@ function ContractsContent() {
                   </TableCell>
                   <TableCell className="text-right">
                     <span className="font-medium">
-                      {formatCurrency(contract.current_value, contract.currency)}
+                      {formatCurrency(contract.current_value || 0, contract.currency)}
                     </span>
                   </TableCell>
                   <TableCell>

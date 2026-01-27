@@ -97,6 +97,7 @@ export interface Contract {
   owner_id: string | null;
   department: Department | null;
   sharepoint_url: string | null;
+  document_urls: string[] | null;
   notes: string | null;
 
   // Legal Requirements

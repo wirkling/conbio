@@ -65,7 +65,7 @@ import {
   Copy,
 } from 'lucide-react';
 import { Progress } from '@/components/ui/progress';
-import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms, Milestone, Contract, ChangeOrderType, ChangeOrderFormData } from '@/types/database';
+import { ContractStatus, ContractType, MilestoneStatus, CostCategory, StandardBonusMalus, CustomBonusMalus, BonusMalusTerms, Milestone, Contract, ChangeOrderType, ChangeOrderFormData, PassthroughCost, PassthroughType, Currency } from '@/types/database';
 import { calculateRetentionEndDate } from '@/lib/utils/dates';
 import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
 import { calculateMilestoneAdjustment } from '@/lib/utils/milestone-adjustments';
@@ -1268,7 +1268,7 @@ export default function ContractDetailPage() {
     setEditingPTC(ptc);
     setPtcFormData({
       category: ptc.category,
-      description: ptc.description,
+      description: ptc.description || '',
       passthrough_type: ptc.passthrough_type,
       budgeted_total: ptc.budgeted_total || 0,
       budgeted_per_period: ptc.budgeted_per_period || 0,
@@ -1291,7 +1291,7 @@ export default function ContractDetailPage() {
         budgeted_total: ptcFormData.budgeted_total,
         budgeted_per_period: ptcFormData.budgeted_per_period || null,
         actual_spent: ptcFormData.actual_spent,
-        currency: ptcFormData.currency,
+        currency: ptcFormData.currency as Currency,
         notes: ptcFormData.notes || null,
         updated_at: new Date().toISOString(),
       };
@@ -1472,7 +1472,7 @@ export default function ContractDetailPage() {
     setEditingMilestone(milestone);
     setMilestoneFormData({
       name: milestone.name,
-      milestone_number: milestone.milestone_number,
+      milestone_number: milestone.milestone_number || 0,
       original_value: milestone.original_value || 0,
       original_due_date: milestone.original_due_date || '',
       description: '',
@@ -3816,8 +3816,7 @@ export default function ContractDetailPage() {
             </div>
 
             {(ptcFormData.passthrough_type === 'monthly' ||
-              ptcFormData.passthrough_type === 'quarterly' ||
-              ptcFormData.passthrough_type === 'annually') && (
+              ptcFormData.passthrough_type === 'quarterly') && (
               <div className="grid gap-2">
                 <Label htmlFor="ptc_per_period">Budget per Period</Label>
                 <Input
