@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -454,12 +454,17 @@ export default function ContractDetailPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
+  // Circuit breaker to prevent infinite loops
+  const hasFetchedRef = useRef(false);
+  const fetchAttemptsRef = useRef(0);
+
   // Data state
   const [contract, setContract] = useState<Contract | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
   const [passthroughCosts, setPassthroughCosts] = useState<PassthroughCost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
@@ -513,9 +518,22 @@ export default function ContractDetailPage() {
   // Fetch contract data
   useEffect(() => {
     if (!user || !contractId) return;
+    if (hasFetchedRef.current) return; // Prevent multiple fetches
+
+    // Circuit breaker: stop after 3 attempts
+    if (fetchAttemptsRef.current >= 3) {
+      console.error('Too many fetch attempts, stopping to prevent infinite loop');
+      setError('Failed to load contract after multiple attempts');
+      setLoading(false);
+      return;
+    }
+
+    fetchAttemptsRef.current += 1;
 
     const fetchContractData = async () => {
+      console.log('Fetching contract data...', { contractId, attempt: fetchAttemptsRef.current });
       setLoading(true);
+      setError(null);
 
       try {
         // Fetch contract with related data
@@ -532,18 +550,22 @@ export default function ContractDetailPage() {
 
         if (contractError) {
           console.error('Error fetching contract:', contractError);
-          toast.error('Failed to load contract');
-          router.push('/contracts');
+          setError(`Failed to load contract: ${contractError.message}`);
+          hasFetchedRef.current = true; // Mark as attempted even on error
+          setLoading(false);
           return;
         }
 
+        console.log('Contract data loaded successfully');
         setContract(contractData);
         setMilestones(contractData.milestones || []);
         setChangeOrders(contractData.change_orders || []);
         setPassthroughCosts(contractData.passthrough_costs || []);
+        hasFetchedRef.current = true; // Mark as successfully fetched
       } catch (error) {
         console.error('Error:', error);
-        toast.error('An error occurred');
+        setError('An unexpected error occurred');
+        hasFetchedRef.current = true; // Mark as attempted even on error
       } finally {
         setLoading(false);
       }
@@ -569,12 +591,17 @@ export default function ContractDetailPage() {
     );
   }
 
-  // Show error if contract not found
-  if (!contract) {
+  // Show error if there was an error or contract not found
+  if (error || (!loading && !contract)) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="text-center">
-          <p className="text-gray-600">Contract not found</p>
+          <p className="text-red-600 font-semibold mb-2">
+            {error || 'Contract not found'}
+          </p>
+          <p className="text-gray-500 text-sm mb-4">
+            Contract ID: {contractId}
+          </p>
           <Button onClick={() => router.push('/contracts')} className="mt-4">
             Back to Contracts
           </Button>
