@@ -461,7 +461,15 @@ export default function ContractDetailPage() {
 
   // Render counter to detect infinite loops
   renderCountRef.current += 1;
-  console.log(`Render count: ${renderCountRef.current}`);
+  console.log(`Render count: ${renderCountRef.current}`, {
+    authLoading,
+    loading,
+    hasContract: !!contract,
+    contractId,
+    userId: user?.id,
+    milestonesCount: milestones.length,
+    changeOrdersCount: changeOrders.length,
+  });
 
   if (renderCountRef.current > 50) {
     console.error('INFINITE LOOP DETECTED: Too many renders!');
@@ -575,14 +583,16 @@ export default function ContractDetailPage() {
 
         console.log('Contract data loaded successfully');
 
-        // Batch all state updates together using startTransition
-        // This prevents rapid successive re-renders that trigger React error #310
-        startTransition(() => {
-          setContract(contractData);
-          setMilestones(contractData.milestones || []);
-          setChangeOrders(contractData.change_orders || []);
-          setPassthroughCosts(contractData.passthrough_costs || []);
-          setLoading(false);
+        // Use requestAnimationFrame to space out updates and prevent React error #310
+        // This ensures updates happen in the next frame, preventing "too many renders" error
+        requestAnimationFrame(() => {
+          startTransition(() => {
+            setContract(contractData);
+            setMilestones(contractData.milestones || []);
+            setChangeOrders(contractData.change_orders || []);
+            setPassthroughCosts(contractData.passthrough_costs || []);
+            setLoading(false);
+          });
         });
       } catch (error) {
         console.error('Error:', error);
