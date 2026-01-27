@@ -10,6 +10,7 @@ import {
   Settings,
   LayoutDashboard,
   Link2,
+  ScrollText,
 } from 'lucide-react';
 
 const navigation = [
@@ -17,6 +18,7 @@ const navigation = [
   { name: 'Contracts', href: '/contracts', icon: FileText },
   { name: 'Search', href: '/contracts?search=true', icon: Search },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
+  { name: 'Audit Log', href: '/audit-log', icon: ScrollText },
   { name: 'HubSpot', href: '/settings/hubspot', icon: Link2 },
   { name: 'Settings', href: '/settings', icon: Settings },
 ];
