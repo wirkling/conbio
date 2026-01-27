@@ -15,18 +15,6 @@ export default function Error({
     console.error('Contract page error:', error);
   }, [error]);
 
-  // If it's the "too many re-renders" error, try to reset automatically
-  useEffect(() => {
-    if (error.message && error.message.includes('Too many re-renders')) {
-      console.warn('Auto-recovering from React error #310...');
-      // Try to reset after a short delay
-      const timeout = setTimeout(() => {
-        reset();
-      }, 100);
-      return () => clearTimeout(timeout);
-    }
-  }, [error, reset]);
-
   return (
     <div className="flex items-center justify-center h-96">
       <div className="text-center">
