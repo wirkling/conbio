@@ -457,6 +457,30 @@ export default function ContractDetailPage() {
   // Circuit breaker to prevent infinite loops
   const hasFetchedRef = useRef(false);
   const fetchAttemptsRef = useRef(0);
+  const renderCountRef = useRef(0);
+
+  // Render counter to detect infinite loops
+  renderCountRef.current += 1;
+  console.log(`Render count: ${renderCountRef.current}`);
+
+  if (renderCountRef.current > 50) {
+    console.error('INFINITE LOOP DETECTED: Too many renders!');
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-red-600 font-semibold mb-2">
+            Infinite render loop detected
+          </p>
+          <p className="text-gray-500 text-sm mb-4">
+            The page rendered {renderCountRef.current} times.
+          </p>
+          <Button onClick={() => window.location.reload()}>
+            Reload Page
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Data state
   const [contract, setContract] = useState<Contract | null>(null);
