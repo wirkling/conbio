@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
@@ -565,9 +565,9 @@ export default function ContractDetailPage() {
     fetchContractData();
   }, [user, contractId]);
 
-  const totalChangeOrderValue = changeOrders.reduce(
-    (sum: number, co) => sum + (co.value_change || 0),
-    0
+  const totalChangeOrderValue = useMemo(() =>
+    changeOrders.reduce((sum: number, co) => sum + (co.value_change || 0), 0),
+    [changeOrders]
   );
 
   // Show loading state
