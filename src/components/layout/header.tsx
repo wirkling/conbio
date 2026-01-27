@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, User } from 'lucide-react';
+import { Search, Bell, User, LogOut } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,9 +14,12 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 
 export function Header() {
   const router = useRouter();
+  const { user, signOut } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleSearch = (e: React.FormEvent) => {
@@ -25,6 +28,20 @@ export function Header() {
       router.push(`/contracts?q=${encodeURIComponent(searchQuery.trim())}`);
     }
   };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      toast.success('Signed out successfully');
+      router.push('/login');
+    } catch (error: any) {
+      toast.error(error.message || 'Sign out failed');
+    }
+  };
+
+  const userInitials = user?.email
+    ? user.email.substring(0, 2).toUpperCase()
+    : 'U';
 
   return (
     <header className="flex h-16 items-center justify-between border-b bg-white px-6">
@@ -57,8 +74,8 @@ export function Header() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-9 w-9 rounded-full">
               <Avatar className="h-9 w-9">
-                <AvatarFallback>
-                  <User className="h-4 w-4" />
+                <AvatarFallback className="bg-blue-600 text-white">
+                  {userInitials}
                 </AvatarFallback>
               </Avatar>
             </Button>
@@ -66,15 +83,21 @@ export function Header() {
           <DropdownMenuContent align="end" className="w-56">
             <DropdownMenuLabel>
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">User</p>
-                <p className="text-xs text-muted-foreground">user@symbio.com</p>
+                <p className="text-sm font-medium">
+                  {user?.user_metadata?.name || 'User'}
+                </p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/settings')}>
+              Settings
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Sign out</DropdownMenuItem>
+            <DropdownMenuItem onClick={handleSignOut} className="text-red-600">
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

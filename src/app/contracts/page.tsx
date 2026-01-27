@@ -1,8 +1,12 @@
 'use client';
 
-import { useState, useMemo, Suspense } from 'react';
+import { useState, useMemo, Suspense, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { toast } from 'sonner';
 import {
   Card,
   CardContent,
@@ -138,14 +142,48 @@ function formatCurrency(value: number, currency: string = 'EUR') {
 
 function ContractsContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const initialQuery = searchParams.get('q') || '';
 
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
 
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [authLoading, user, router]);
+
+  // Fetch contracts from Supabase
+  useEffect(() => {
+    if (!user) return;
+
+    const fetchContracts = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('contracts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching contracts:', error);
+        toast.error('Failed to load contracts');
+      } else {
+        setContracts(data || []);
+      }
+      setLoading(false);
+    };
+
+    fetchContracts();
+  }, [user]);
+
   const filteredContracts = useMemo(() => {
-    return mockContracts.filter((contract) => {
+    return contracts.filter((contract) => {
       // Search filter
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -170,7 +208,18 @@ function ContractsContent() {
 
       return true;
     });
-  }, [searchQuery, statusFilter, typeFilter]);
+  }, [contracts, searchQuery, statusFilter, typeFilter]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading contracts...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

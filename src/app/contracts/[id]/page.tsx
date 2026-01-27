@@ -71,6 +71,8 @@ import { calculateBonusMalus } from '@/lib/utils/bonus-malus';
 import { calculateMilestoneAdjustment } from '@/lib/utils/milestone-adjustments';
 import { generateInflationEmail } from '@/lib/utils/email-templates';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -449,6 +451,15 @@ const isCustomBonusMalus = (
 export default function ContractDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
+  // Data state
+  const [contract, setContract] = useState<Contract | null>(null);
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
+  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
+  const [loading, setLoading] = useState(true);
+
+  // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isUploadDocOpen, setIsUploadDocOpen] = useState(false);
   const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
@@ -459,8 +470,6 @@ export default function ContractDetailPage() {
   const [isMarkCompleteOpen, setIsMarkCompleteOpen] = useState(false);
   const [selectedMilestone, setSelectedMilestone] = useState<Milestone | null>(null);
   const [completionDate, setCompletionDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [milestones, setMilestones] = useState<Milestone[]>(mockMilestones);
-  const [changeOrders, setChangeOrders] = useState(mockChangeOrders);
 
   // Multi-step Change Order form state
   const [coFormStep, setCoFormStep] = useState(1);  // 1: Type, 2: Impact, 3: Document, 4: Review
@@ -471,12 +480,83 @@ export default function ContractDetailPage() {
   });
   const [includePtcAdjustments, setIncludePtcAdjustments] = useState(false);
 
-  const contract = mockContract; // In real app, fetch by params.id
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [authLoading, user, router]);
+
+  // Fetch contract data
+  useEffect(() => {
+    if (!user || !params.id) return;
+
+    const fetchContractData = async () => {
+      setLoading(true);
+
+      try {
+        // Fetch contract with related data
+        const { data: contractData, error: contractError } = await supabase
+          .from('contracts')
+          .select(`
+            *,
+            milestones(*),
+            change_orders(*)
+          `)
+          .eq('id', params.id)
+          .single();
+
+        if (contractError) {
+          console.error('Error fetching contract:', contractError);
+          toast.error('Failed to load contract');
+          router.push('/contracts');
+          return;
+        }
+
+        setContract(contractData);
+        setMilestones(contractData.milestones || []);
+        setChangeOrders(contractData.change_orders || []);
+      } catch (error) {
+        console.error('Error:', error);
+        toast.error('An error occurred');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchContractData();
+  }, [user, params.id, router]);
 
   const totalChangeOrderValue = changeOrders.reduce(
     (sum: number, co) => sum + (co.value_change || 0),
     0
   );
+
+  // Show loading state
+  if (authLoading || loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading contract...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error if contract not found
+  if (!contract) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <p className="text-gray-600">Contract not found</p>
+          <Button onClick={() => router.push('/contracts')} className="mt-4">
+            Back to Contracts
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   // Helper function to render bonus/malus terms
   const renderBonusMalusTerms = (terms: BonusMalusTerms | null) => {
