@@ -477,25 +477,28 @@ export default function ContractDetailPage() {
   // Destructure for easier access
   const { contract, milestones, changeOrders, passthroughCosts, loading, error } = contractData;
 
-  // Helper setters for backward compatibility with existing code
-  const setContract = (contract: Contract | null) => {
+  // Helper setters for backward compatibility with existing code - memoized to prevent recreation
+  const setContract = useCallback((contract: Contract | null) => {
     setContractData(prev => ({ ...prev, contract }));
-  };
-  const setMilestones = (milestones: Milestone[] | ((prev: Milestone[]) => Milestone[])) => {
+  }, []);
+
+  const setMilestones = useCallback((milestones: Milestone[] | ((prev: Milestone[]) => Milestone[])) => {
     setContractData(prev => ({
       ...prev,
       milestones: typeof milestones === 'function' ? milestones(prev.milestones) : milestones
     }));
-  };
-  const setChangeOrders = (orders: typeof mockChangeOrders | ((prev: typeof mockChangeOrders) => typeof mockChangeOrders)) => {
+  }, []);
+
+  const setChangeOrders = useCallback((orders: typeof mockChangeOrders | ((prev: typeof mockChangeOrders) => typeof mockChangeOrders)) => {
     setContractData(prev => ({
       ...prev,
       changeOrders: typeof orders === 'function' ? orders(prev.changeOrders) : orders
     }));
-  };
-  const setPassthroughCosts = (costs: PassthroughCost[]) => {
+  }, []);
+
+  const setPassthroughCosts = useCallback((costs: PassthroughCost[]) => {
     setContractData(prev => ({ ...prev, passthroughCosts: costs }));
-  };
+  }, []);
 
   // Dialog state
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
@@ -544,7 +547,7 @@ export default function ContractDetailPage() {
     if (!authLoading && !user) {
       router.push('/login');
     }
-  }, [authLoading, user]);
+  }, [authLoading, user, router]);
 
   // Fetch contract data
   useEffect(() => {
@@ -583,14 +586,16 @@ export default function ContractDetailPage() {
 
         console.log('Contract data loaded successfully');
 
-        // Single state update - all data at once to prevent multiple renders
-        setContractData({
-          contract: fetchedData,
-          milestones: fetchedData.milestones || [],
-          changeOrders: fetchedData.change_orders || mockChangeOrders,
-          passthroughCosts: fetchedData.passthrough_costs || [],
-          loading: false,
-          error: null,
+        // Defer state update to next microtask to avoid React error #310
+        queueMicrotask(() => {
+          setContractData({
+            contract: fetchedData,
+            milestones: fetchedData.milestones || [],
+            changeOrders: fetchedData.change_orders || mockChangeOrders,
+            passthroughCosts: fetchedData.passthrough_costs || [],
+            loading: false,
+            error: null,
+          });
         });
       } catch (error) {
         console.error('Error:', error);
