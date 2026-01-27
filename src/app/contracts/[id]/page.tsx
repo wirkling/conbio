@@ -705,8 +705,8 @@ export default function ContractDetailPage() {
     }
   };
 
-  // Fetch inflation rate from Supabase
-  const fetchInflationRate = useCallback(async (year: number) => {
+  // Fetch inflation rate from Supabase (not used in useEffect, so no need for useCallback)
+  const fetchInflationRate = async (year: number) => {
     if (!contract) {
       setInflationRate(null);
       return;
@@ -735,7 +735,7 @@ export default function ContractDetailPage() {
     setInflationRate(data?.rate_percentage || null);
     setManualInflationRate(null);
     setIsManualOverride(false);
-  }, [contract]);
+  };
 
   // Calculate total contract value increase from inflation (with filtering and compounding)
   const calculateTotalIncrease = (rate: number) => {
@@ -1227,12 +1227,37 @@ export default function ContractDetailPage() {
 
   // Load inflation rate when dialog opens or year changes
   useEffect(() => {
-    if (isApplyInflationOpen && selectedInflationYear) {
-      fetchInflationRate(selectedInflationYear).catch((error) => {
-        console.error('Error in fetchInflationRate:', error);
-      });
+    if (isApplyInflationOpen && selectedInflationYear && contract) {
+      // Inline the fetch logic to avoid dependency on callback
+      const fetchRate = async () => {
+        const rateType = contract.inflation_clause?.rate_type;
+        if (!rateType) {
+          setInflationRate(null);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from('inflation_rates')
+          .select('*')
+          .eq('rate_type', rateType)
+          .eq('year', selectedInflationYear)
+          .maybeSingle();
+
+        if (error) {
+          console.error('Error fetching inflation rate:', error);
+          setInflationRate(null);
+          return;
+        }
+
+        setInflationRate(data?.rate_percentage || null);
+        setManualInflationRate(null);
+        setIsManualOverride(false);
+      };
+
+      fetchRate();
     }
-  }, [isApplyInflationOpen, selectedInflationYear, fetchInflationRate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isApplyInflationOpen, selectedInflationYear]);
 
   // Pass-through Cost handlers
   const handleAddPTC = async () => {
