@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Card,
   CardContent,
@@ -26,75 +28,185 @@ import { toast } from 'sonner';
 
 export default function NewContractPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bonusMalusMode, setBonusMalusMode] = useState<'standard' | 'custom'>('custom');
 
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/login');
+    }
+  }, [authLoading, user, router]);
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setIsSubmitting(true);
 
-    const formData = new FormData(e.currentTarget);
-
-    // Build inflation clause object from nested fields
-    const inflationRateType = formData.get('inflation_rate_type') as string;
-    const inflationCalculation = formData.get('inflation_calculation') as string;
-    const inflationTiming = formData.get('inflation_timing') as string;
-    const inflationNotes = formData.get('inflation_notes') as string;
-
-    const inflationClause =
-      inflationRateType || inflationCalculation || inflationTiming || inflationNotes
-        ? {
-            rate_type: inflationRateType || undefined,
-            calculation_method: inflationCalculation || undefined,
-            application_timing: inflationTiming || undefined,
-            notes: inflationNotes || undefined,
-          }
-        : null;
-
-    // Build bonus/malus object based on mode
-    let bonusMalusTerms = null;
-    if (bonusMalusMode === 'standard') {
-      const earlyBonus = formData.get('early_bonus_percent');
-      const earlyThreshold = formData.get('early_threshold_weeks');
-      const latePenalty = formData.get('late_penalty_percent');
-      const penaltyPeriod = formData.get('penalty_per_period');
-      const maxPenalty = formData.get('max_penalty_percent');
-
-      if (earlyBonus || latePenalty) {
-        bonusMalusTerms = {
-          type: 'standard',
-          early_bonus_percent: earlyBonus ? parseFloat(earlyBonus as string) : 0,
-          early_threshold_weeks: earlyThreshold ? parseInt(earlyThreshold as string) : 0,
-          late_penalty_percent: latePenalty ? parseFloat(latePenalty as string) : 0,
-          penalty_per_period: (penaltyPeriod as 'month' | 'week' | 'day') || 'month',
-          max_penalty_percent: maxPenalty ? parseFloat(maxPenalty as string) : 0,
-        };
-      }
-    } else {
-      const customTerms = formData.get('bonus_malus_custom');
-      if (customTerms) {
-        bonusMalusTerms = {
-          type: 'custom',
-          terms: customTerms as string,
-        };
-      }
+    if (!user) {
+      toast.error('You must be logged in to create a contract');
+      return;
     }
 
-    // Note: This is a mock implementation. In production, you would:
-    // 1. Collect all form data including new legal requirement fields
-    // 2. Submit to Supabase with these fields:
-    //    - bonus_malus_terms: bonusMalusTerms (as JSONB)
-    //    - inflation_clause: inflationClause (as JSONB)
-    //    - liability_terms: formData.get('liability_terms')
-    //    - retention_period_value: parseInt(formData.get('retention_period_value'))
-    //    - retention_period_unit: formData.get('retention_period_unit')
+    setIsSubmitting(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    try {
+      const formData = new FormData(e.currentTarget);
 
-    toast.success('Contract created successfully');
-    router.push('/contracts');
+      // Build inflation clause object from nested fields
+      const inflationRateType = formData.get('inflation_rate_type') as string;
+      const inflationCalculation = formData.get('inflation_calculation') as string;
+      const inflationTiming = formData.get('inflation_timing') as string;
+      const inflationNotes = formData.get('inflation_notes') as string;
+
+      const inflationClause =
+        inflationRateType || inflationCalculation || inflationTiming || inflationNotes
+          ? {
+              rate_type: inflationRateType || undefined,
+              calculation_method: inflationCalculation || undefined,
+              application_timing: inflationTiming || undefined,
+              notes: inflationNotes || undefined,
+            }
+          : null;
+
+      // Build bonus/malus object based on mode
+      let bonusMalusTerms = null;
+      if (bonusMalusMode === 'standard') {
+        const earlyBonus = formData.get('early_bonus_percent');
+        const earlyThreshold = formData.get('early_threshold_weeks');
+        const latePenalty = formData.get('late_penalty_percent');
+        const penaltyPeriod = formData.get('penalty_per_period');
+        const maxPenalty = formData.get('max_penalty_percent');
+
+        if (earlyBonus || latePenalty) {
+          bonusMalusTerms = {
+            type: 'standard',
+            early_bonus_percent: earlyBonus ? parseFloat(earlyBonus as string) : 0,
+            early_threshold_weeks: earlyThreshold ? parseInt(earlyThreshold as string) : 0,
+            late_penalty_percent: latePenalty ? parseFloat(latePenalty as string) : 0,
+            penalty_per_period: (penaltyPeriod as 'month' | 'week' | 'day') || 'month',
+            max_penalty_percent: maxPenalty ? parseFloat(maxPenalty as string) : 0,
+          };
+        }
+      } else {
+        const customTerms = formData.get('bonus_malus_custom');
+        if (customTerms) {
+          bonusMalusTerms = {
+            type: 'custom',
+            terms: customTerms as string,
+          };
+        }
+      }
+
+      // 1. Upload document if provided
+      let documentUrls: string[] = [];
+      const fileInput = document.querySelector<HTMLInputElement>('input[type="file"]');
+      if (fileInput?.files && fileInput.files.length > 0) {
+        for (const file of Array.from(fileInput.files)) {
+          const filePath = `${user.id}/${Date.now()}-${file.name}`;
+          const { data, error } = await supabase.storage
+            .from('contract-documents')
+            .upload(filePath, file);
+
+          if (error) {
+            console.error('Error uploading file:', error);
+            toast.error(`Failed to upload ${file.name}`);
+            continue;
+          }
+
+          if (data) {
+            documentUrls.push(data.path);
+          }
+        }
+      }
+
+      // 2. Prepare contract data
+      const contractData = {
+        title: formData.get('title') as string,
+        contract_number: (formData.get('contract_number') as string) || null,
+        contract_type: formData.get('contract_type') as string,
+        status: (formData.get('status') as string) || 'draft',
+        vendor_name: (formData.get('vendor_name') as string) || null,
+        client_name: (formData.get('client_name') as string) || 'Symbio',
+        project_name: (formData.get('project_name') as string) || null,
+        sponsor_name: (formData.get('sponsor_name') as string) || null,
+        description: (formData.get('description') as string) || null,
+        signature_date: (formData.get('signature_date') as string) || null,
+        start_date: (formData.get('start_date') as string) || null,
+        end_date: (formData.get('end_date') as string) || null,
+        notice_period: formData.get('notice_period')
+          ? parseInt(formData.get('notice_period') as string)
+          : null,
+        auto_renew: formData.get('auto_renew') === 'on',
+        original_value: formData.get('original_value')
+          ? parseFloat(formData.get('original_value') as string)
+          : 0,
+        current_value: formData.get('original_value')
+          ? parseFloat(formData.get('original_value') as string)
+          : 0,
+        currency: (formData.get('currency') as string) || 'EUR',
+        payment_terms: (formData.get('payment_terms') as string) || null,
+        bonus_malus_terms: bonusMalusTerms,
+        inflation_clause: inflationClause,
+        liability_terms: (formData.get('liability_terms') as string) || null,
+        retention_period_value: formData.get('retention_period_value')
+          ? parseInt(formData.get('retention_period_value') as string)
+          : null,
+        retention_period_unit: (formData.get('retention_period_unit') as string) || null,
+        sharepoint_url: (formData.get('sharepoint_url') as string) || null,
+        notes: (formData.get('notes') as string) || null,
+        document_urls: documentUrls.length > 0 ? documentUrls : null,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      // 3. Insert into Supabase
+      const { data: newContract, error: contractError } = await supabase
+        .from('contracts')
+        .insert([contractData])
+        .select()
+        .single();
+
+      if (contractError) {
+        console.error('Error creating contract:', contractError);
+        toast.error('Failed to create contract');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 4. Create audit log entry
+      await supabase.from('audit_log').insert([
+        {
+          table_name: 'contracts',
+          record_id: newContract.id,
+          action: 'create',
+          old_values: null,
+          new_values: contractData,
+          user_id: user.id,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      toast.success('Contract created successfully');
+      router.push(`/contracts/${newContract.id}`);
+    } catch (error) {
+      console.error('Error creating contract:', error);
+      toast.error('Failed to create contract');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (authLoading || !user) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-4xl">
