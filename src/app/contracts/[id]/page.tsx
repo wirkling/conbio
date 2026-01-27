@@ -73,7 +73,6 @@ import { generateInflationEmail } from '@/lib/utils/email-templates';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 // Mock data - will be replaced with Supabase queries
 const mockContract = {
@@ -449,7 +448,7 @@ const isCustomBonusMalus = (
   return terms?.type === 'custom';
 };
 
-function ContractDetailPageInner() {
+export default function ContractDetailPage() {
   const params = useParams();
   const contractId = params.id as string;
   const router = useRouter();
@@ -584,16 +583,14 @@ function ContractDetailPageInner() {
 
         console.log('Contract data loaded successfully');
 
-        // Set data immediately
-        setContract(contractData);
-        setMilestones(contractData.milestones || []);
-        setChangeOrders(contractData.change_orders || []);
-        setPassthroughCosts(contractData.passthrough_costs || []);
-
-        // Delay setLoading(false) to space out renders and prevent React error #310
-        setTimeout(() => {
+        // Batch all state updates together to prevent multiple renders
+        startTransition(() => {
+          setContract(contractData);
+          setMilestones(contractData.milestones || []);
+          setChangeOrders(contractData.change_orders || []);
+          setPassthroughCosts(contractData.passthrough_costs || []);
           setLoading(false);
-        }, 100);
+        });
       } catch (error) {
         console.error('Error:', error);
         setError('An unexpected error occurred');
@@ -4056,13 +4053,5 @@ function ContractDetailPageInner() {
         </DialogContent>
       </Dialog>
     </div>
-  );
-}
-
-export default function ContractDetailPage() {
-  return (
-    <ErrorBoundary>
-      <ContractDetailPageInner />
-    </ErrorBoundary>
   );
 }
