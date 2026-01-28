@@ -440,6 +440,7 @@ export default function ContractDetailPage() {
           const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
           if (!milestone) continue;
 
+          // Update milestone
           const { error: updateError } = await supabase
             .from('milestones')
             .update({
@@ -453,6 +454,24 @@ export default function ContractDetailPage() {
             console.error('Error updating milestone:', updateError);
             toast.error(`Failed to update milestone ${milestone.name}: ${updateError.message}`);
           } else {
+            // Create milestone change record for audit trail
+            const { error: changeError } = await supabase
+              .from('milestone_changes')
+              .insert([{
+                milestone_id: milestone.id,
+                change_order_id: insertedChangeOrder.id,
+                previous_due_date: milestone.current_due_date,
+                new_due_date: adj.new_due_date,
+                previous_value: milestone.current_value,
+                new_value: adj.new_value,
+                change_reason: adj.adjustment_reason || null,
+              }]);
+
+            if (changeError) {
+              console.error('Error creating milestone change record:', changeError);
+              // Don't show error to user - this is just audit trail
+            }
+
             // Update local state
             setData(prev => ({
               ...prev,
@@ -976,45 +995,100 @@ export default function ContractDetailPage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Due Date</TableHead>
                       <TableHead className="text-right">Value</TableHead>
+                      <TableHead>Changes</TableHead>
                       <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.milestones.map((m) => (
-                      <TableRow key={m.id}>
-                        <TableCell className="font-medium">{m.milestone_number || '-'}</TableCell>
-                        <TableCell>{m.name}</TableCell>
-                        <TableCell>
-                          <Badge className={milestoneStatusColors[m.status]}>
-                            {m.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{formatDate(m.current_due_date)}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(m.current_value, contract.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleEditMilestone(m)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleDeleteMilestone(m.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {data.milestones.map((m) => {
+                      const hasValueChanged = m.original_value !== m.current_value;
+                      const hasDueDateChanged = m.original_due_date !== m.current_due_date;
+                      const hasChanges = hasValueChanged || hasDueDateChanged;
+                      const valueChange = (m.current_value || 0) - (m.original_value || 0);
+
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell className="font-medium">{m.milestone_number || '-'}</TableCell>
+                          <TableCell>
+                            {m.name}
+                            {hasChanges && (
+                              <span className="ml-2 text-xs text-orange-600">●</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={milestoneStatusColors[m.status]}>
+                              {m.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <div>{formatDate(m.current_due_date)}</div>
+                              {hasDueDateChanged && (
+                                <div className="text-xs text-gray-400 line-through">
+                                  {formatDate(m.original_due_date)}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div>
+                              <div className="font-medium">
+                                {formatCurrency(m.current_value, contract.currency)}
+                              </div>
+                              {hasValueChanged && (
+                                <div className="text-xs text-gray-400 line-through">
+                                  {formatCurrency(m.original_value, contract.currency)}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {hasChanges ? (
+                              <div className="text-xs space-y-1">
+                                {hasValueChanged && (
+                                  <div className={valueChange > 0 ? 'text-green-600' : 'text-red-600'}>
+                                    CO: {valueChange > 0 ? '+' : ''}
+                                    {formatCurrency(valueChange, contract.currency)}
+                                  </div>
+                                )}
+                                {hasDueDateChanged && (
+                                  <div className="text-orange-600">
+                                    Date changed
+                                  </div>
+                                )}
+                                {m.inflation_adjustments && m.inflation_adjustments.length > 0 && (
+                                  <div className="text-blue-600">
+                                    Inflation: {m.inflation_adjustments.length}x
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-gray-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleEditMilestone(m)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleDeleteMilestone(m.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
