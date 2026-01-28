@@ -400,7 +400,24 @@ export default function ContractDetailPage() {
         }, 0);
       }
 
-      // 2. Create change order record
+      // 2. Handle document upload/link
+      let documentUrl = coFormData.document_sharepoint_url || null;
+      let isSharePoint = !!coFormData.document_sharepoint_url;
+
+      if (coFormData.document_file) {
+        // TODO: Implement actual file upload to Supabase Storage
+        // For now, create a mock path
+        // const { data: uploadData, error: uploadError } = await supabase.storage
+        //   .from('change-order-documents')
+        //   .upload(`${contractId}/${coFormData.document_file.name}`, coFormData.document_file);
+
+        // Mock storage path for now
+        documentUrl = `/storage/change-orders/${contractId}/${coFormData.document_file.name}`;
+        isSharePoint = false;
+        console.log('Document would be uploaded to:', documentUrl);
+      }
+
+      // 3. Create change order record
       const newChangeOrderData = {
         contract_id: contractId,
         title: coFormData.title,
@@ -411,8 +428,8 @@ export default function ContractDetailPage() {
         direct_cost_change: directCostChange,
         ptc_change: ptcChange,
         value_change: directCostChange, // For backward compatibility
-        document_url: coFormData.document_sharepoint_url || null,
-        is_document_sharepoint: !!coFormData.document_sharepoint_url,
+        document_url: documentUrl,
+        is_document_sharepoint: isSharePoint,
         invoiced_immediately: coFormData.invoiced_immediately || false,
         invoiced_date: coFormData.invoiced_immediately
           ? new Date().toISOString().split('T')[0]
@@ -1113,44 +1130,107 @@ export default function ContractDetailPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Title</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>CO Number</TableHead>
                       <TableHead>Effective Date</TableHead>
-                      <TableHead className="text-right">Value Change</TableHead>
+                      <TableHead className="text-right">Impact</TableHead>
+                      <TableHead>Doc</TableHead>
                       <TableHead className="w-20">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {data.changeOrders.map((co) => (
-                      <TableRow key={co.id}>
-                        <TableCell className="font-medium">{co.title}</TableCell>
-                        <TableCell>{co.change_order_number || '-'}</TableCell>
-                        <TableCell>{formatDate(co.effective_date)}</TableCell>
-                        <TableCell className={`text-right font-medium ${(co.value_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {(co.value_change || 0) >= 0 ? '+' : ''}
-                          {formatCurrency(co.value_change || 0, contract.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleEditChangeOrder(co)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleDeleteChangeOrder(co.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {data.changeOrders.map((co) => {
+                      const coTypeLabels: Record<string, string> = {
+                        milestone_adjustment: 'Milestone Adj.',
+                        lump_sum_immediate: 'Lump Sum (Immed.)',
+                        lump_sum_milestone: 'Lump Sum (Mile.)',
+                        passthrough_only: 'PTC Only',
+                        combined: 'Combined',
+                      };
+
+                      const coTypeColors: Record<string, string> = {
+                        milestone_adjustment: 'bg-blue-100 text-blue-800',
+                        lump_sum_immediate: 'bg-green-100 text-green-800',
+                        lump_sum_milestone: 'bg-purple-100 text-purple-800',
+                        passthrough_only: 'bg-orange-100 text-orange-800',
+                        combined: 'bg-indigo-100 text-indigo-800',
+                      };
+
+                      return (
+                        <TableRow key={co.id}>
+                          <TableCell className="font-medium">
+                            {co.title}
+                            {co.invoiced_immediately && (
+                              <span className="ml-2 text-xs text-green-600">● Invoiced</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={coTypeColors[co.co_type] || 'bg-gray-100 text-gray-800'}>
+                              {coTypeLabels[co.co_type] || co.co_type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{co.change_order_number || '-'}</TableCell>
+                          <TableCell>{formatDate(co.effective_date)}</TableCell>
+                          <TableCell className="text-right">
+                            {co.direct_cost_change !== null && co.direct_cost_change !== 0 && (
+                              <div className={`font-medium ${(co.direct_cost_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {(co.direct_cost_change || 0) >= 0 ? '+' : ''}
+                                {formatCurrency(co.direct_cost_change || 0, contract.currency)}
+                              </div>
+                            )}
+                            {co.ptc_change !== null && co.ptc_change !== 0 && (
+                              <div className={`text-xs ${(co.ptc_change || 0) >= 0 ? 'text-orange-600' : 'text-orange-500'}`}>
+                                PTC: {(co.ptc_change || 0) >= 0 ? '+' : ''}
+                                {formatCurrency(co.ptc_change || 0, contract.currency)}
+                              </div>
+                            )}
+                            {(!co.direct_cost_change || co.direct_cost_change === 0) &&
+                             (!co.ptc_change || co.ptc_change === 0) && (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {co.document_url ? (
+                              <a
+                                href={co.document_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800"
+                                title={co.is_document_sharepoint ? 'SharePoint Link' : 'View Document'}
+                              >
+                                {co.is_document_sharepoint ? (
+                                  <Link2 className="h-4 w-4" />
+                                ) : (
+                                  <FileText className="h-4 w-4" />
+                                )}
+                              </a>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleEditChangeOrder(co)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleDeleteChangeOrder(co.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               )}
@@ -1940,20 +2020,90 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Step 3: Document - Placeholder for now */}
+          {/* Step 3: Document */}
           {coFormStep === 3 && (
             <div className="space-y-4">
               <div className="grid gap-2">
                 <Label>Change Order Document (Optional)</Label>
-                <div className="border-2 border-dashed rounded-md p-6 text-center">
-                  <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
-                  <p className="text-sm text-gray-600">
-                    Document upload feature coming soon
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    You'll be able to upload PDFs or provide SharePoint links
-                  </p>
-                </div>
+                <Tabs defaultValue="upload" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="upload">Upload PDF</TabsTrigger>
+                    <TabsTrigger value="sharepoint">SharePoint Link</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="upload" className="space-y-3">
+                    <div
+                      className="border-2 border-dashed rounded-md p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors"
+                      onClick={() => document.getElementById('co-file-input')?.click()}
+                    >
+                      <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-600">
+                        Click to upload or drag and drop
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">PDF up to 50MB</p>
+                      <input
+                        id="co-file-input"
+                        type="file"
+                        className="hidden"
+                        accept=".pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setCoFormData({
+                              ...coFormData,
+                              document_file: file,
+                              document_sharepoint_url: undefined, // Clear SharePoint URL if file is selected
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+                    {coFormData.document_file && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600 bg-blue-50 border border-blue-200 rounded-md p-3">
+                        <FileText className="h-4 w-4 text-blue-600" />
+                        <span className="flex-1">{coFormData.document_file.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6"
+                          onClick={() =>
+                            setCoFormData({ ...coFormData, document_file: undefined })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="sharepoint" className="space-y-3">
+                    <div className="grid gap-2">
+                      <Label htmlFor="sharepoint_url">SharePoint URL</Label>
+                      <Input
+                        id="sharepoint_url"
+                        type="url"
+                        placeholder="https://yourcompany.sharepoint.com/..."
+                        value={coFormData.document_sharepoint_url || ''}
+                        onChange={(e) =>
+                          setCoFormData({
+                            ...coFormData,
+                            document_sharepoint_url: e.target.value,
+                            document_file: undefined, // Clear file if SharePoint URL is provided
+                          })
+                        }
+                      />
+                      <p className="text-xs text-gray-500">
+                        Paste the link to the CO document in SharePoint
+                      </p>
+                    </div>
+                    {coFormData.document_sharepoint_url && (
+                      <div className="flex items-center gap-2 text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded-md p-3">
+                        <Link2 className="h-4 w-4" />
+                        <span className="flex-1 truncate">{coFormData.document_sharepoint_url}</span>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           )}
@@ -2137,6 +2287,32 @@ export default function ContractDetailPage() {
                     <div className="text-sm">
                       <span className="text-gray-500">Description:</span>
                       <p className="mt-1 text-gray-700">{coFormData.description}</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Document */}
+                {(coFormData.document_file || coFormData.document_sharepoint_url) && (
+                  <div className="border-t pt-3">
+                    <div className="text-sm">
+                      <span className="text-gray-500">Document:</span>
+                      <div className="mt-2 flex items-center gap-2 text-gray-700">
+                        {coFormData.document_file && (
+                          <>
+                            <FileText className="h-4 w-4 text-blue-600" />
+                            <span>{coFormData.document_file.name}</span>
+                            <span className="text-xs text-gray-500">
+                              ({(coFormData.document_file.size / 1024).toFixed(1)} KB)
+                            </span>
+                          </>
+                        )}
+                        {coFormData.document_sharepoint_url && (
+                          <>
+                            <Link2 className="h-4 w-4 text-blue-600" />
+                            <span className="truncate">{coFormData.document_sharepoint_url}</span>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
