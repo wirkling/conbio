@@ -355,7 +355,6 @@ export default function ContractDetailPage() {
           change_order_number: changeOrderNumber || null,
           value_change: changeOrderValue,
           effective_date: changeOrderDate || null,
-          updated_at: new Date().toISOString(),
         })
         .eq('id', editingChangeOrder.id);
 
@@ -377,7 +376,6 @@ export default function ContractDetailPage() {
                 change_order_number: changeOrderNumber || null,
                 value_change: changeOrderValue,
                 effective_date: changeOrderDate || null,
-                updated_at: new Date().toISOString(),
               }
             : co
         ),
