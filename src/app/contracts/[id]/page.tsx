@@ -77,12 +77,20 @@ export default function ContractDetailPage() {
   const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
   const [isEditMilestoneOpen, setIsEditMilestoneOpen] = useState(false);
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
+  const [isEditChangeOrderOpen, setIsEditChangeOrderOpen] = useState(false);
   const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
 
   // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
   const [milestoneValue, setMilestoneValue] = useState(0);
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
+
+  // Change Order form state
+  const [changeOrderTitle, setChangeOrderTitle] = useState('');
+  const [changeOrderNumber, setChangeOrderNumber] = useState('');
+  const [changeOrderValue, setChangeOrderValue] = useState(0);
+  const [changeOrderDate, setChangeOrderDate] = useState('');
+  const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -326,6 +334,106 @@ export default function ContractDetailPage() {
     }
   };
 
+  // Change Order handlers
+  const handleEditChangeOrder = (changeOrder: ChangeOrder) => {
+    setEditingChangeOrder(changeOrder);
+    setChangeOrderTitle(changeOrder.title);
+    setChangeOrderNumber(changeOrder.change_order_number || '');
+    setChangeOrderValue(changeOrder.value_change || 0);
+    setChangeOrderDate(changeOrder.effective_date || '');
+    setIsEditChangeOrderOpen(true);
+  };
+
+  const handleSaveEditChangeOrder = async () => {
+    if (!editingChangeOrder || !changeOrderTitle) return;
+
+    try {
+      const { error } = await supabase
+        .from('change_orders')
+        .update({
+          title: changeOrderTitle,
+          change_order_number: changeOrderNumber || null,
+          value_change: changeOrderValue,
+          effective_date: changeOrderDate || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingChangeOrder.id);
+
+      if (error) {
+        console.error('Supabase error updating change order:', error);
+        toast.error(`Failed to update change order: ${error.message}`);
+        return;
+      }
+
+      console.log('Change order updated in database:', editingChangeOrder.id);
+
+      setData(prev => ({
+        ...prev,
+        changeOrders: prev.changeOrders.map(co =>
+          co.id === editingChangeOrder.id
+            ? {
+                ...co,
+                title: changeOrderTitle,
+                change_order_number: changeOrderNumber || null,
+                value_change: changeOrderValue,
+                effective_date: changeOrderDate || null,
+                updated_at: new Date().toISOString(),
+              }
+            : co
+        ),
+      }));
+
+      toast.success('Change order updated successfully');
+
+      // Reset form and close dialog
+      setEditingChangeOrder(null);
+      setChangeOrderTitle('');
+      setChangeOrderNumber('');
+      setChangeOrderValue(0);
+      setChangeOrderDate('');
+      setIsEditChangeOrderOpen(false);
+    } catch (error: any) {
+      console.error('Error updating change order:', error);
+      toast.error(`Failed to update change order: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteChangeOrder = async (changeOrderId: string) => {
+    if (!confirm('Are you sure you want to delete this change order?')) return;
+
+    try {
+      const { data: deletedData, error } = await supabase
+        .from('change_orders')
+        .delete()
+        .eq('id', changeOrderId)
+        .select();
+
+      if (error) {
+        console.error('Supabase error deleting change order:', error);
+        toast.error(`Failed to delete change order: ${error.message}`);
+        return;
+      }
+
+      if (!deletedData || deletedData.length === 0) {
+        console.error('No rows were deleted - change order might not exist or RLS policy blocking');
+        toast.error('Failed to delete change order - no rows affected');
+        return;
+      }
+
+      console.log('Change order deleted from database:', changeOrderId);
+
+      setData(prev => ({
+        ...prev,
+        changeOrders: prev.changeOrders.filter(co => co.id !== changeOrderId),
+      }));
+
+      toast.success('Change order deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting change order:', error);
+      toast.error(`Failed to delete change order: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -548,10 +656,20 @@ export default function ContractDetailPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEditChangeOrder(co)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDeleteChangeOrder(co.id)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -751,6 +869,69 @@ export default function ContractDetailPage() {
               Cancel
             </Button>
             <Button onClick={handleSaveEditMilestone} disabled={!milestoneName}>
+              Save Changes
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Change Order Dialog */}
+      <Dialog open={isEditChangeOrderOpen} onOpenChange={setIsEditChangeOrderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Change Order</DialogTitle>
+            <DialogDescription>
+              Update change order details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit_co_title">Title *</Label>
+              <Input
+                id="edit_co_title"
+                placeholder="e.g., Scope Extension - Phase 2"
+                value={changeOrderTitle}
+                onChange={(e) => setChangeOrderTitle(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_co_number">Change Order Number</Label>
+              <Input
+                id="edit_co_number"
+                placeholder="e.g., CO-002"
+                value={changeOrderNumber}
+                onChange={(e) => setChangeOrderNumber(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_co_value">Value Change ({contract.currency})</Label>
+              <Input
+                id="edit_co_value"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={changeOrderValue}
+                onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-gray-500">
+                Positive for increase, negative for decrease
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_co_date">Effective Date</Label>
+              <Input
+                id="edit_co_date"
+                type="date"
+                value={changeOrderDate}
+                onChange={(e) => setChangeOrderDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditChangeOrderOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditChangeOrder} disabled={!changeOrderTitle}>
               Save Changes
             </Button>
           </div>
