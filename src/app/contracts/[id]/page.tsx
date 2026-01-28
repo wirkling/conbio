@@ -79,6 +79,7 @@ export default function ContractDetailPage() {
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isEditChangeOrderOpen, setIsEditChangeOrderOpen] = useState(false);
   const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
+  const [isEditPTCOpen, setIsEditPTCOpen] = useState(false);
 
   // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
@@ -91,6 +92,12 @@ export default function ContractDetailPage() {
   const [changeOrderValue, setChangeOrderValue] = useState(0);
   const [changeOrderDate, setChangeOrderDate] = useState('');
   const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
+
+  // Pass-Through Cost form state
+  const [ptcDescription, setPtcDescription] = useState('');
+  const [ptcBudget, setPtcBudget] = useState(0);
+  const [ptcActualSpent, setPtcActualSpent] = useState(0);
+  const [editingPTC, setEditingPTC] = useState<PassthroughCost | null>(null);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -432,6 +439,100 @@ export default function ContractDetailPage() {
     }
   };
 
+  // Pass-Through Cost handlers
+  const handleEditPTC = (ptc: PassthroughCost) => {
+    setEditingPTC(ptc);
+    setPtcDescription(ptc.description || '');
+    setPtcBudget(ptc.budgeted_total || 0);
+    setPtcActualSpent(ptc.actual_spent || 0);
+    setIsEditPTCOpen(true);
+  };
+
+  const handleSaveEditPTC = async () => {
+    if (!editingPTC || !ptcDescription) return;
+
+    try {
+      const { error } = await supabase
+        .from('passthrough_costs')
+        .update({
+          description: ptcDescription,
+          budgeted_total: ptcBudget,
+          actual_spent: ptcActualSpent,
+        })
+        .eq('id', editingPTC.id);
+
+      if (error) {
+        console.error('Supabase error updating PTC:', error);
+        toast.error(`Failed to update pass-through cost: ${error.message}`);
+        return;
+      }
+
+      console.log('PTC updated in database:', editingPTC.id);
+
+      setData(prev => ({
+        ...prev,
+        passthroughCosts: prev.passthroughCosts.map(ptc =>
+          ptc.id === editingPTC.id
+            ? {
+                ...ptc,
+                description: ptcDescription,
+                budgeted_total: ptcBudget,
+                actual_spent: ptcActualSpent,
+              }
+            : ptc
+        ),
+      }));
+
+      toast.success('Pass-through cost updated successfully');
+
+      // Reset form and close dialog
+      setEditingPTC(null);
+      setPtcDescription('');
+      setPtcBudget(0);
+      setPtcActualSpent(0);
+      setIsEditPTCOpen(false);
+    } catch (error: any) {
+      console.error('Error updating PTC:', error);
+      toast.error(`Failed to update pass-through cost: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeletePTC = async (ptcId: string) => {
+    if (!confirm('Are you sure you want to delete this pass-through cost?')) return;
+
+    try {
+      const { data: deletedData, error } = await supabase
+        .from('passthrough_costs')
+        .delete()
+        .eq('id', ptcId)
+        .select();
+
+      if (error) {
+        console.error('Supabase error deleting PTC:', error);
+        toast.error(`Failed to delete pass-through cost: ${error.message}`);
+        return;
+      }
+
+      if (!deletedData || deletedData.length === 0) {
+        console.error('No rows were deleted - PTC might not exist or RLS policy blocking');
+        toast.error('Failed to delete pass-through cost - no rows affected');
+        return;
+      }
+
+      console.log('PTC deleted from database:', ptcId);
+
+      setData(prev => ({
+        ...prev,
+        passthroughCosts: prev.passthroughCosts.filter(ptc => ptc.id !== ptcId),
+      }));
+
+      toast.success('Pass-through cost deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting PTC:', error);
+      toast.error(`Failed to delete pass-through cost: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -719,10 +820,20 @@ export default function ContractDetailPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEditPTC(ptc)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDeletePTC(ptc.id)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -956,6 +1067,59 @@ export default function ContractDetailPage() {
               <li>Effective date</li>
               <li>Description</li>
             </ul>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Pass-Through Cost Dialog */}
+      <Dialog open={isEditPTCOpen} onOpenChange={setIsEditPTCOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Pass-Through Cost</DialogTitle>
+            <DialogDescription>
+              Update pass-through cost details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit_ptc_description">Description *</Label>
+              <Input
+                id="edit_ptc_description"
+                placeholder="e.g., Client site visits & workshops"
+                value={ptcDescription}
+                onChange={(e) => setPtcDescription(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_ptc_budget">Budget ({contract.currency}) *</Label>
+              <Input
+                id="edit_ptc_budget"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={ptcBudget}
+                onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_ptc_actual">Actual Spent ({contract.currency})</Label>
+              <Input
+                id="edit_ptc_actual"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={ptcActualSpent}
+                onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditPTCOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditPTC} disabled={!ptcDescription}>
+              Save Changes
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
