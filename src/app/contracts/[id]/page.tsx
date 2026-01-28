@@ -1246,27 +1246,176 @@ export default function ContractDetailPage() {
         </TabsList>
 
         <TabsContent value="overview">
-          <Card>
-            <CardHeader>
-              <CardTitle>Contract Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div>
-                  <span className="text-sm text-gray-500">Description:</span>
-                  <p>{contract.description || 'No description'}</p>
+          <div className="space-y-6">
+            {/* Financial Summary Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Financial Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Contract Value */}
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-500">Contract Value</div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-gray-400">Original:</div>
+                      <div className="text-lg font-medium">
+                        {formatCurrency(contract.original_value, contract.currency)}
+                      </div>
+                      {(() => {
+                        const totalCOImpact = data.changeOrders.reduce(
+                          (sum, co) => sum + (co.direct_cost_change || 0),
+                          0
+                        );
+                        const totalMilestoneValue = data.milestones.reduce(
+                          (sum, m) => sum + (m.current_value || 0),
+                          0
+                        );
+                        return totalCOImpact !== 0 ? (
+                          <>
+                            <div className={`text-xs ${totalCOImpact > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              Change Orders: {totalCOImpact > 0 ? '+' : ''}
+                              {formatCurrency(totalCOImpact, contract.currency)}
+                            </div>
+                            <div className="text-xs text-gray-400">Current Total:</div>
+                            <div className="text-2xl font-bold text-blue-600">
+                              {formatCurrency(totalMilestoneValue, contract.currency)}
+                            </div>
+                          </>
+                        ) : null;
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Milestone Progress */}
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-500">Milestone Progress</div>
+                    <div className="space-y-2">
+                      {(() => {
+                        const totalMilestones = data.milestones.length;
+                        const completedMilestones = data.milestones.filter((m) => m.status === 'completed').length;
+                        const invoicedMilestones = data.milestones.filter((m) => m.invoiced).length;
+                        const paidMilestones = data.milestones.filter((m) => m.paid).length;
+
+                        const invoicedValue = data.milestones
+                          .filter((m) => m.invoiced)
+                          .reduce((sum, m) => sum + (m.current_value || 0), 0);
+                        const paidValue = data.milestones
+                          .filter((m) => m.paid)
+                          .reduce((sum, m) => sum + (m.current_value || 0), 0);
+
+                        return (
+                          <>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-500">Completed:</span>
+                              <span className="font-medium">{completedMilestones} / {totalMilestones}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-blue-600">Invoiced:</span>
+                              <span className="font-medium">
+                                {invoicedMilestones} ({formatCurrency(invoicedValue, contract.currency)})
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-green-600">Paid:</span>
+                              <span className="font-medium">
+                                {paidMilestones} ({formatCurrency(paidValue, contract.currency)})
+                              </span>
+                            </div>
+                            <div className="mt-2 pt-2 border-t flex justify-between text-xs">
+                              <span className="text-gray-500">Outstanding:</span>
+                              <span className="font-bold text-orange-600">
+                                {formatCurrency(invoicedValue - paidValue, contract.currency)}
+                              </span>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Pass-Through Costs */}
+                  <div className="space-y-2">
+                    <div className="text-sm text-gray-500">Pass-Through Costs</div>
+                    <div className="space-y-2">
+                      {(() => {
+                        const totalBudget = data.passthroughCosts.reduce(
+                          (sum, ptc) => sum + (ptc.budgeted_total || 0),
+                          0
+                        );
+                        const totalSpent = data.passthroughCosts.reduce(
+                          (sum, ptc) => sum + (ptc.actual_spent || 0),
+                          0
+                        );
+                        const remaining = totalBudget - totalSpent;
+                        const utilization = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+
+                        return (
+                          <>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-500">Budget:</span>
+                              <span className="font-medium">{formatCurrency(totalBudget, contract.currency)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-orange-600">Spent:</span>
+                              <span className="font-medium">{formatCurrency(totalSpent, contract.currency)}</span>
+                            </div>
+                            <div className="flex justify-between text-xs">
+                              <span className="text-gray-500">Remaining:</span>
+                              <span className={`font-medium ${remaining < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                {formatCurrency(remaining, contract.currency)}
+                              </span>
+                            </div>
+                            <div className="mt-2 pt-2 border-t">
+                              <div className="flex justify-between text-xs mb-1">
+                                <span className="text-gray-500">Utilization:</span>
+                                <span className="font-medium">{utilization.toFixed(1)}%</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className={`h-2 rounded-full ${
+                                    utilization > 100
+                                      ? 'bg-red-600'
+                                      : utilization > 80
+                                      ? 'bg-orange-600'
+                                      : 'bg-green-600'
+                                  }`}
+                                  style={{ width: `${Math.min(utilization, 100)}%` }}
+                                ></div>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-sm text-gray-500">Project:</span>
-                  <p>{contract.project_name || 'N/A'}</p>
+              </CardContent>
+            </Card>
+
+            {/* Contract Details Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Contract Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-sm text-gray-500">Description:</span>
+                    <p>{contract.description || 'No description'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-500">Project:</span>
+                    <p>{contract.project_name || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-500">Department:</span>
+                    <p>{contract.department || 'N/A'}</p>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-sm text-gray-500">Department:</span>
-                  <p>{contract.department || 'N/A'}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="milestones">
