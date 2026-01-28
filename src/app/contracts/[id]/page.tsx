@@ -292,14 +292,23 @@ export default function ContractDetailPage() {
     if (!confirm('Are you sure you want to delete this milestone?')) return;
 
     try {
-      const { error } = await supabase
+      const { data: deletedData, error, count } = await supabase
         .from('milestones')
         .delete()
-        .eq('id', milestoneId);
+        .eq('id', milestoneId)
+        .select();
 
       if (error) {
         console.error('Supabase error deleting milestone:', error);
         toast.error(`Failed to delete milestone: ${error.message}`);
+        return;
+      }
+
+      console.log('Delete response:', { deletedData, count });
+
+      if (!deletedData || deletedData.length === 0) {
+        console.error('No rows were deleted - milestone might not exist or RLS policy blocking');
+        toast.error('Failed to delete milestone - no rows affected');
         return;
       }
 
