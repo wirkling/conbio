@@ -434,7 +434,44 @@ export default function ContractDetailPage() {
 
       console.log('Change order added to database:', insertedChangeOrder);
 
-      // 3. Handle lump_sum_milestone type - create new milestone
+      // 3. Handle milestone adjustments
+      if (coFormData.co_type === 'milestone_adjustment' && coFormData.milestone_adjustments) {
+        for (const adj of coFormData.milestone_adjustments) {
+          const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+          if (!milestone) continue;
+
+          const { error: updateError } = await supabase
+            .from('milestones')
+            .update({
+              current_value: adj.new_value,
+              current_due_date: adj.new_due_date,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', milestone.id);
+
+          if (updateError) {
+            console.error('Error updating milestone:', updateError);
+            toast.error(`Failed to update milestone ${milestone.name}: ${updateError.message}`);
+          } else {
+            // Update local state
+            setData(prev => ({
+              ...prev,
+              milestones: prev.milestones.map((m) =>
+                m.id === milestone.id
+                  ? {
+                      ...m,
+                      current_value: adj.new_value || m.current_value,
+                      current_due_date: adj.new_due_date || m.current_due_date,
+                      updated_at: new Date().toISOString(),
+                    }
+                  : m
+              ),
+            }));
+          }
+        }
+      }
+
+      // 4. Handle lump_sum_milestone type - create new milestone
       if (coFormData.co_type === 'lump_sum_milestone') {
         const newMilestoneData = {
           contract_id: contractId,
@@ -477,7 +514,62 @@ export default function ContractDetailPage() {
         }
       }
 
-      // 4. Update local state
+      // 5. Handle pass-through cost adjustments
+      if (
+        (coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') &&
+        coFormData.ptc_adjustments
+      ) {
+        for (const adj of coFormData.ptc_adjustments) {
+          const ptc = data.passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+          if (!ptc) continue;
+
+          // Update PTC budget
+          const { error: updateError } = await supabase
+            .from('passthrough_costs')
+            .update({
+              budgeted_total: adj.new_budget,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', ptc.id);
+
+          if (updateError) {
+            console.error('Error updating pass-through cost:', updateError);
+            toast.error(`Failed to update PTC ${ptc.description}: ${updateError.message}`);
+          } else {
+            // Update local state
+            setData(prev => ({
+              ...prev,
+              passthroughCosts: prev.passthroughCosts.map((p) =>
+                p.id === ptc.id
+                  ? {
+                      ...p,
+                      budgeted_total: adj.new_budget,
+                      updated_at: new Date().toISOString(),
+                    }
+                  : p
+              ),
+            }));
+
+            // Create adjustment record in change_order_passthrough_adjustments table
+            const { error: adjError } = await supabase
+              .from('change_order_passthrough_adjustments')
+              .insert([{
+                change_order_id: insertedChangeOrder.id,
+                passthrough_cost_id: ptc.id,
+                previous_budget: ptc.budgeted_total || 0,
+                new_budget: adj.new_budget,
+                adjustment_reason: adj.adjustment_reason || null,
+              }]);
+
+            if (adjError) {
+              console.error('Error creating PTC adjustment record:', adjError);
+              // Don't show error to user - this is just audit trail
+            }
+          }
+        }
+      }
+
+      // 7. Update local state
       setData(prev => ({
         ...prev,
         changeOrders: [...prev.changeOrders, insertedChangeOrder],
@@ -485,7 +577,7 @@ export default function ContractDetailPage() {
 
       toast.success('Change order created successfully');
 
-      // 5. Reset form and close dialog
+      // 8. Reset form and close dialog
       setCoFormStep(1);
       setCoFormData({
         co_type: 'milestone_adjustment',
@@ -1437,24 +1529,125 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Step 2: Impact Definition - Placeholder for now */}
+          {/* Step 2: Impact Definition */}
           {coFormStep === 2 && (
             <div className="space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                <p className="text-sm text-yellow-800">
-                  <strong>Step 2: Impact Definition</strong> - Implementation in progress.
-                  This step will allow you to select milestones to adjust or define new milestone values based on the CO type selected.
-                </p>
-              </div>
-
               {/* Milestone Adjustment Type */}
               {coFormData.co_type === 'milestone_adjustment' && (
                 <div className="space-y-3">
                   <Label>Select Milestones to Adjust</Label>
-                  <div className="border rounded-md p-4 text-sm text-gray-500">
-                    Milestone selection interface will be implemented here.
-                    You will be able to select milestones and adjust their values/dates.
-                  </div>
+                  {data.milestones.length === 0 ? (
+                    <div className="border rounded-md p-4 text-sm text-gray-500 text-center">
+                      No milestones available. Please add milestones to the contract first.
+                    </div>
+                  ) : (
+                    <div className="border rounded-md p-4 space-y-3 max-h-96 overflow-y-auto">
+                      {data.milestones.map((milestone) => {
+                        const adjustment = coFormData.milestone_adjustments?.find(
+                          (a) => a.milestone_id === milestone.id
+                        );
+                        const isSelected = !!adjustment;
+
+                        return (
+                          <div
+                            key={milestone.id}
+                            className={`border rounded-md p-3 ${
+                              isSelected ? 'border-blue-600 bg-blue-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setCoFormData({
+                                      ...coFormData,
+                                      milestone_adjustments: [
+                                        ...(coFormData.milestone_adjustments || []),
+                                        {
+                                          milestone_id: milestone.id,
+                                          new_value: milestone.current_value || undefined,
+                                          new_due_date: milestone.current_due_date || undefined,
+                                        },
+                                      ],
+                                    });
+                                  } else {
+                                    setCoFormData({
+                                      ...coFormData,
+                                      milestone_adjustments: coFormData.milestone_adjustments?.filter(
+                                        (a) => a.milestone_id !== milestone.id
+                                      ),
+                                    });
+                                  }
+                                }}
+                                className="mt-1"
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium">{milestone.name}</div>
+                                <div className="text-xs text-gray-500">
+                                  Current: {contract.currency} {(milestone.current_value || 0).toLocaleString()} •{' '}
+                                  Due: {milestone.current_due_date || 'Not set'}
+                                </div>
+
+                                {/* Adjustment Inputs */}
+                                {isSelected && (
+                                  <div className="mt-3 grid grid-cols-2 gap-3">
+                                    <div className="grid gap-1">
+                                      <Label className="text-xs">New Value ({contract.currency})</Label>
+                                      <Input
+                                        type="number"
+                                        step="any"
+                                        value={adjustment?.new_value || ''}
+                                        onChange={(e) => {
+                                          const newAdjs = coFormData.milestone_adjustments?.map((a) =>
+                                            a.milestone_id === milestone.id
+                                              ? { ...a, new_value: parseFloat(e.target.value) || undefined }
+                                              : a
+                                          );
+                                          setCoFormData({ ...coFormData, milestone_adjustments: newAdjs });
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="grid gap-1">
+                                      <Label className="text-xs">New Due Date</Label>
+                                      <Input
+                                        type="date"
+                                        value={adjustment?.new_due_date || ''}
+                                        onChange={(e) => {
+                                          const newAdjs = coFormData.milestone_adjustments?.map((a) =>
+                                            a.milestone_id === milestone.id
+                                              ? { ...a, new_due_date: e.target.value || undefined }
+                                              : a
+                                          );
+                                          setCoFormData({ ...coFormData, milestone_adjustments: newAdjs });
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="col-span-2 grid gap-1">
+                                      <Label className="text-xs">Reason (optional)</Label>
+                                      <Input
+                                        placeholder="e.g., Client delay, scope change"
+                                        value={adjustment?.adjustment_reason || ''}
+                                        onChange={(e) => {
+                                          const newAdjs = coFormData.milestone_adjustments?.map((a) =>
+                                            a.milestone_id === milestone.id
+                                              ? { ...a, adjustment_reason: e.target.value }
+                                              : a
+                                          );
+                                          setCoFormData({ ...coFormData, milestone_adjustments: newAdjs });
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1546,10 +1739,102 @@ export default function ContractDetailPage() {
               {(coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') && (
                 <div className="space-y-3">
                   <Label>Pass-Through Cost Adjustments</Label>
-                  <div className="border rounded-md p-4 text-sm text-gray-500">
-                    Pass-through cost selection interface will be implemented here.
-                    You will be able to select PTC categories and adjust their budgets.
-                  </div>
+                  {data.passthroughCosts.length === 0 ? (
+                    <div className="border rounded-md p-4 text-sm text-gray-500 text-center">
+                      No pass-through costs available. Please add pass-through costs to the contract first.
+                    </div>
+                  ) : (
+                    <div className="border rounded-md p-4 space-y-3 max-h-96 overflow-y-auto">
+                      {data.passthroughCosts.map((ptc) => {
+                        const adjustment = coFormData.ptc_adjustments?.find(
+                          (a) => a.passthrough_cost_id === ptc.id
+                        );
+                        const isSelected = !!adjustment;
+
+                        return (
+                          <div
+                            key={ptc.id}
+                            className={`border rounded-md p-3 ${
+                              isSelected ? 'border-blue-600 bg-blue-50' : ''
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setCoFormData({
+                                      ...coFormData,
+                                      ptc_adjustments: [
+                                        ...(coFormData.ptc_adjustments || []),
+                                        {
+                                          passthrough_cost_id: ptc.id,
+                                          new_budget: ptc.budgeted_total || 0,
+                                        },
+                                      ],
+                                    });
+                                  } else {
+                                    setCoFormData({
+                                      ...coFormData,
+                                      ptc_adjustments: coFormData.ptc_adjustments?.filter(
+                                        (a) => a.passthrough_cost_id !== ptc.id
+                                      ),
+                                    });
+                                  }
+                                }}
+                                className="mt-1"
+                              />
+                              <div className="flex-1">
+                                <div className="font-medium">{ptc.description || 'Unnamed'}</div>
+                                <div className="text-xs text-gray-500">
+                                  Category: {ptc.category} • Current Budget:{' '}
+                                  {contract.currency} {(ptc.budgeted_total || 0).toLocaleString()}
+                                </div>
+
+                                {/* Adjustment Inputs */}
+                                {isSelected && (
+                                  <div className="mt-3 grid gap-2">
+                                    <div className="grid gap-1">
+                                      <Label className="text-xs">New Budget ({contract.currency})</Label>
+                                      <Input
+                                        type="number"
+                                        step="any"
+                                        value={adjustment?.new_budget || ''}
+                                        onChange={(e) => {
+                                          const newAdjs = coFormData.ptc_adjustments?.map((a) =>
+                                            a.passthrough_cost_id === ptc.id
+                                              ? { ...a, new_budget: parseFloat(e.target.value) || 0 }
+                                              : a
+                                          );
+                                          setCoFormData({ ...coFormData, ptc_adjustments: newAdjs });
+                                        }}
+                                      />
+                                    </div>
+                                    <div className="grid gap-1">
+                                      <Label className="text-xs">Reason (optional)</Label>
+                                      <Input
+                                        placeholder="e.g., Additional travel required"
+                                        value={adjustment?.adjustment_reason || ''}
+                                        onChange={(e) => {
+                                          const newAdjs = coFormData.ptc_adjustments?.map((a) =>
+                                            a.passthrough_cost_id === ptc.id
+                                              ? { ...a, adjustment_reason: e.target.value }
+                                              : a
+                                          );
+                                          setCoFormData({ ...coFormData, ptc_adjustments: newAdjs });
+                                        }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1599,7 +1884,7 @@ export default function ContractDetailPage() {
             </div>
           )}
 
-          {/* Step 4: Review - Placeholder for now */}
+          {/* Step 4: Review */}
           {coFormStep === 4 && (
             <div className="space-y-4">
               <div className="bg-gray-50 rounded-md p-4 space-y-3">
@@ -1634,8 +1919,68 @@ export default function ContractDetailPage() {
                 </div>
 
                 {/* Impact Summary */}
-                {coFormData.direct_cost_change && (
-                  <div className="border-t pt-3">
+                <div className="border-t pt-3 space-y-2">
+                  <h4 className="font-medium text-sm">Impact Summary</h4>
+
+                  {/* Milestone Adjustments */}
+                  {coFormData.co_type === 'milestone_adjustment' && coFormData.milestone_adjustments && coFormData.milestone_adjustments.length > 0 && (
+                    <div className="text-sm">
+                      <span className="text-gray-500">Milestones Affected:</span>{' '}
+                      <span className="font-medium">
+                        {coFormData.milestone_adjustments.length}
+                      </span>
+                      {coFormData.milestone_adjustments.map((adj) => {
+                        const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+                        if (!milestone) return null;
+                        const valueChange = (adj.new_value || 0) - (milestone.current_value || 0);
+
+                        return (
+                          <div key={adj.milestone_id} className="ml-4 mt-1 text-xs">
+                            • {milestone.name}:{' '}
+                            {valueChange !== 0 && (
+                              <span
+                                className={valueChange > 0 ? 'text-green-600' : 'text-red-600'}
+                              >
+                                {valueChange > 0 ? '+' : ''}
+                                {contract.currency} {valueChange.toLocaleString()}
+                              </span>
+                            )}
+                            {adj.new_due_date &&
+                              adj.new_due_date !== milestone.current_due_date && (
+                                <span className="text-orange-600">
+                                  {' '} • Due: {adj.new_due_date}
+                                </span>
+                              )}
+                          </div>
+                        );
+                      })}
+                      <div className="mt-2 text-xs font-medium">
+                        Total Value Change:{' '}
+                        <span className={
+                          coFormData.milestone_adjustments.reduce((sum, adj) => {
+                            const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+                            return sum + ((adj.new_value || 0) - (milestone?.current_value || 0));
+                          }, 0) > 0 ? 'text-green-600' : 'text-red-600'
+                        }>
+                          {coFormData.milestone_adjustments.reduce((sum, adj) => {
+                            const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+                            const change = (adj.new_value || 0) - (milestone?.current_value || 0);
+                            return sum + change;
+                          }, 0) > 0 ? '+' : ''}
+                          {contract.currency}{' '}
+                          {coFormData.milestone_adjustments.reduce((sum, adj) => {
+                            const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+                            return sum + ((adj.new_value || 0) - (milestone?.current_value || 0));
+                          }, 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Direct Cost Change (for lump sum and combined types) */}
+                  {(coFormData.co_type === 'lump_sum_immediate' ||
+                    coFormData.co_type === 'lump_sum_milestone' ||
+                    (coFormData.co_type === 'combined' && coFormData.direct_cost_change)) && (
                     <div className="text-sm">
                       <span className="text-gray-500">Direct Revenue/Cost Change:</span>{' '}
                       <span
@@ -1646,8 +1991,78 @@ export default function ContractDetailPage() {
                         }`}
                       >
                         {(coFormData.direct_cost_change || 0) > 0 ? '+' : ''}
-                        {contract.currency} {coFormData.direct_cost_change?.toLocaleString()}
+                        {contract.currency} {(coFormData.direct_cost_change || 0).toLocaleString()}
                       </span>
+                      {coFormData.co_type === 'lump_sum_milestone' && (
+                        <div className="ml-4 mt-1 text-xs text-gray-600">
+                          New Milestone: {coFormData.new_milestone_name} • Due: {coFormData.new_milestone_due_date}
+                        </div>
+                      )}
+                      {coFormData.invoiced_immediately && (
+                        <div className="ml-4 mt-1 text-xs text-blue-600">
+                          ✓ Marked as invoiced immediately
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Pass-Through Cost Adjustments */}
+                  {(coFormData.co_type === 'passthrough_only' ||
+                    coFormData.co_type === 'combined') &&
+                    coFormData.ptc_adjustments &&
+                    coFormData.ptc_adjustments.length > 0 && (
+                      <div className="text-sm">
+                        <span className="text-gray-500">Pass-Through Cost Adjustments:</span>{' '}
+                        <span className="font-medium">
+                          {coFormData.ptc_adjustments.length} category(s)
+                        </span>
+                        {coFormData.ptc_adjustments.map((adj) => {
+                          const ptc = data.passthroughCosts.find(
+                            (p) => p.id === adj.passthrough_cost_id
+                          );
+                          if (!ptc) return null;
+                          const change = adj.new_budget - (ptc.budgeted_total || 0);
+
+                          return (
+                            <div key={adj.passthrough_cost_id} className="ml-4 mt-1 text-xs">
+                              • {ptc.description}:{' '}
+                              <span className={change > 0 ? 'text-green-600' : 'text-red-600'}>
+                                {change > 0 ? '+' : ''}
+                                {contract.currency} {change.toLocaleString()}
+                              </span>
+                            </div>
+                          );
+                        })}
+                        <div className="mt-2 text-xs font-medium">
+                          Total PTC Change:{' '}
+                          <span className={
+                            coFormData.ptc_adjustments.reduce((sum, adj) => {
+                              const ptc = data.passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+                              return sum + (adj.new_budget - (ptc?.budgeted_total || 0));
+                            }, 0) > 0 ? 'text-green-600' : 'text-red-600'
+                          }>
+                            {coFormData.ptc_adjustments.reduce((sum, adj) => {
+                              const ptc = data.passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+                              const change = adj.new_budget - (ptc?.budgeted_total || 0);
+                              return sum + change;
+                            }, 0) > 0 ? '+' : ''}
+                            {contract.currency}{' '}
+                            {coFormData.ptc_adjustments.reduce((sum, adj) => {
+                              const ptc = data.passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+                              return sum + (adj.new_budget - (ptc?.budgeted_total || 0));
+                            }, 0).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                </div>
+
+                {/* Description */}
+                {coFormData.description && (
+                  <div className="border-t pt-3">
+                    <div className="text-sm">
+                      <span className="text-gray-500">Description:</span>
+                      <p className="mt-1 text-gray-700">{coFormData.description}</p>
                     </div>
                   </div>
                 )}
