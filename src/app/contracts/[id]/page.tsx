@@ -181,11 +181,10 @@ export default function ContractDetailPage() {
   const totalPTCBudget = data.passthroughCosts.reduce((sum, ptc) => sum + (ptc.budgeted_total || 0), 0);
 
   // Milestone handlers
-  const handleAddMilestone = () => {
+  const handleAddMilestone = async () => {
     if (!milestoneName) return;
 
-    const newMilestone: Milestone = {
-      id: `temp-${Date.now()}`,
+    const newMilestoneData = {
       contract_id: contractId,
       name: milestoneName,
       description: null,
@@ -194,7 +193,7 @@ export default function ContractDetailPage() {
       original_value: milestoneValue,
       current_due_date: null,
       current_value: milestoneValue,
-      status: 'pending',
+      status: 'pending' as const,
       completed_date: null,
       invoiced: false,
       invoiced_date: null,
@@ -207,21 +206,32 @@ export default function ContractDetailPage() {
       adjustment_percentage: null,
       adjustment_reason: null,
       adjustment_calculated_at: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
 
-    setData(prev => ({
-      ...prev,
-      milestones: [...prev.milestones, newMilestone],
-    }));
+    try {
+      const { data: insertedMilestone, error } = await supabase
+        .from('milestones')
+        .insert([newMilestoneData])
+        .select()
+        .single();
 
-    toast.success('Milestone added successfully');
+      if (error) throw error;
 
-    // Reset form and close dialog
-    setMilestoneName('');
-    setMilestoneValue(0);
-    setIsAddMilestoneOpen(false);
+      setData(prev => ({
+        ...prev,
+        milestones: [...prev.milestones, insertedMilestone],
+      }));
+
+      toast.success('Milestone added successfully');
+
+      // Reset form and close dialog
+      setMilestoneName('');
+      setMilestoneValue(0);
+      setIsAddMilestoneOpen(false);
+    } catch (error) {
+      console.error('Error adding milestone:', error);
+      toast.error('Failed to add milestone');
+    }
   };
 
   const handleEditMilestone = (milestone: Milestone) => {
@@ -231,41 +241,69 @@ export default function ContractDetailPage() {
     setIsEditMilestoneOpen(true);
   };
 
-  const handleSaveEditMilestone = () => {
+  const handleSaveEditMilestone = async () => {
     if (!editingMilestone || !milestoneName) return;
 
-    setData(prev => ({
-      ...prev,
-      milestones: prev.milestones.map(m =>
-        m.id === editingMilestone.id
-          ? {
-              ...m,
-              name: milestoneName,
-              current_value: milestoneValue,
-              updated_at: new Date().toISOString(),
-            }
-          : m
-      ),
-    }));
+    try {
+      const { error } = await supabase
+        .from('milestones')
+        .update({
+          name: milestoneName,
+          current_value: milestoneValue,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', editingMilestone.id);
 
-    toast.success('Milestone updated successfully');
+      if (error) throw error;
 
-    // Reset form and close dialog
-    setEditingMilestone(null);
-    setMilestoneName('');
-    setMilestoneValue(0);
-    setIsEditMilestoneOpen(false);
+      setData(prev => ({
+        ...prev,
+        milestones: prev.milestones.map(m =>
+          m.id === editingMilestone.id
+            ? {
+                ...m,
+                name: milestoneName,
+                current_value: milestoneValue,
+                updated_at: new Date().toISOString(),
+              }
+            : m
+        ),
+      }));
+
+      toast.success('Milestone updated successfully');
+
+      // Reset form and close dialog
+      setEditingMilestone(null);
+      setMilestoneName('');
+      setMilestoneValue(0);
+      setIsEditMilestoneOpen(false);
+    } catch (error) {
+      console.error('Error updating milestone:', error);
+      toast.error('Failed to update milestone');
+    }
   };
 
-  const handleDeleteMilestone = (milestoneId: string) => {
+  const handleDeleteMilestone = async (milestoneId: string) => {
     if (!confirm('Are you sure you want to delete this milestone?')) return;
 
-    setData(prev => ({
-      ...prev,
-      milestones: prev.milestones.filter(m => m.id !== milestoneId),
-    }));
+    try {
+      const { error } = await supabase
+        .from('milestones')
+        .delete()
+        .eq('id', milestoneId);
 
-    toast.success('Milestone deleted successfully');
+      if (error) throw error;
+
+      setData(prev => ({
+        ...prev,
+        milestones: prev.milestones.filter(m => m.id !== milestoneId),
+      }));
+
+      toast.success('Milestone deleted successfully');
+    } catch (error) {
+      console.error('Error deleting milestone:', error);
+      toast.error('Failed to delete milestone');
+    }
   };
 
   return (
