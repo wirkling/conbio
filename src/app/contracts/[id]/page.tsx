@@ -360,7 +360,7 @@ export default function ContractDetailPage() {
       invoiced_immediately: false,
       invoiced_date: null,
       scope_change_summary: null,
-      created_by: user?.id || null,
+      // Don't set created_by - let database handle it with trigger or default
     };
 
     try {
@@ -1032,7 +1032,7 @@ export default function ContractDetailPage() {
               <Input
                 id="milestone_value"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={milestoneValue}
                 onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
@@ -1074,7 +1074,7 @@ export default function ContractDetailPage() {
               <Input
                 id="edit_milestone_value"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={milestoneValue}
                 onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
@@ -1125,7 +1125,7 @@ export default function ContractDetailPage() {
               <Input
                 id="edit_co_value"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={changeOrderValue}
                 onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
@@ -1196,7 +1196,7 @@ export default function ContractDetailPage() {
               <Input
                 id="add_co_value"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={changeOrderValue}
                 onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
@@ -1250,7 +1250,7 @@ export default function ContractDetailPage() {
               <Input
                 id="edit_ptc_budget"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={ptcBudget}
                 onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
@@ -1261,7 +1261,7 @@ export default function ContractDetailPage() {
               <Input
                 id="edit_ptc_actual"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={ptcActualSpent}
                 onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
@@ -1310,7 +1310,7 @@ export default function ContractDetailPage() {
               <Input
                 id="add_ptc_budget"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={ptcBudget}
                 onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
@@ -1321,7 +1321,7 @@ export default function ContractDetailPage() {
               <Input
                 id="add_ptc_actual"
                 type="number"
-                step="0.01"
+                step="any"
                 placeholder="0.00"
                 value={ptcActualSpent}
                 onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
