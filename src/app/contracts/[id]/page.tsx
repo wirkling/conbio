@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Contract, Milestone, PassthroughCost, ChangeOrder } from '@/types/database';
+import { toast } from 'sonner';
 import {
   Card,
   CardContent,
@@ -15,6 +16,8 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Dialog,
   DialogContent,
@@ -53,6 +56,10 @@ export default function ContractDetailPage() {
   const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
+
+  // Test: Add simple form state for milestone
+  const [milestoneName, setMilestoneName] = useState('');
+  const [milestoneValue, setMilestoneValue] = useState(0);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -149,6 +156,52 @@ export default function ContractDetailPage() {
   const totalMilestoneValue = data.milestones.reduce((sum, m) => sum + (m.current_value || 0), 0);
   const totalChangeOrderValue = data.changeOrders.reduce((sum, co) => sum + (co.value_change || 0), 0);
   const totalPTCBudget = data.passthroughCosts.reduce((sum, ptc) => sum + (ptc.budgeted_total || 0), 0);
+
+  // Test handler that mutates data state
+  const handleAddMilestone = () => {
+    if (!milestoneName) return;
+
+    const newMilestone: Milestone = {
+      id: `temp-${Date.now()}`,
+      contract_id: contractId,
+      name: milestoneName,
+      description: null,
+      milestone_number: data.milestones.length + 1,
+      original_due_date: null,
+      original_value: milestoneValue,
+      current_due_date: null,
+      current_value: milestoneValue,
+      status: 'pending',
+      completed_date: null,
+      invoiced: false,
+      invoiced_date: null,
+      paid: false,
+      paid_date: null,
+      inflation_adjustments: [],
+      inflation_superseded_by_co: false,
+      adjustment_type: null,
+      adjustment_amount: null,
+      adjustment_percentage: null,
+      adjustment_reason: null,
+      adjustment_calculated_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // THIS is the critical test - updating the data state
+    setData(prev => ({
+      ...prev,
+      milestones: [...prev.milestones, newMilestone],
+    }));
+
+    // Show success message
+    toast.success('Milestone added successfully');
+
+    // Reset form and close dialog
+    setMilestoneName('');
+    setMilestoneValue(0);
+    setIsAddMilestoneOpen(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -421,26 +474,44 @@ export default function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Milestone Dialog (read-only for now) */}
+      {/* Add Milestone Dialog - NOW WITH WORKING FORM */}
       <Dialog open={isAddMilestoneOpen} onOpenChange={setIsAddMilestoneOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Milestone</DialogTitle>
             <DialogDescription>
-              This would be the form to add a new milestone (currently read-only for testing)
+              Create a new milestone for this contract
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-gray-500">
-              In the full version, this dialog would contain inputs for:
-            </p>
-            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
-              <li>Milestone name</li>
-              <li>Milestone number</li>
-              <li>Value</li>
-              <li>Due date</li>
-              <li>Description</li>
-            </ul>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="milestone_name">Milestone Name *</Label>
+              <Input
+                id="milestone_name"
+                placeholder="e.g., Requirements & Design Phase"
+                value={milestoneName}
+                onChange={(e) => setMilestoneName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="milestone_value">Value ({contract.currency}) *</Label>
+              <Input
+                id="milestone_value"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={milestoneValue}
+                onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsAddMilestoneOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddMilestone} disabled={!milestoneName}>
+              Add Milestone
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
