@@ -99,6 +99,7 @@ export default function ContractDetailPage() {
   const [isEditChangeOrderOpen, setIsEditChangeOrderOpen] = useState(false);
   const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
   const [isEditPTCOpen, setIsEditPTCOpen] = useState(false);
+  const [isApplyInflationOpen, setIsApplyInflationOpen] = useState(false);
 
   // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
@@ -126,6 +127,11 @@ export default function ContractDetailPage() {
   const [ptcBudget, setPtcBudget] = useState('');
   const [ptcActualSpent, setPtcActualSpent] = useState('');
   const [editingPTC, setEditingPTC] = useState<PassthroughCost | null>(null);
+
+  // Inflation adjustment form state
+  const [inflationYear, setInflationYear] = useState(new Date().getFullYear().toString());
+  const [inflationRate, setInflationRate] = useState('');
+  const [selectedMilestonesForInflation, setSelectedMilestonesForInflation] = useState<string[]>([]);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -485,6 +491,90 @@ export default function ContractDetailPage() {
     } catch (error: any) {
       console.error('Error marking milestone as paid:', error);
       toast.error(`Failed to mark milestone as paid: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleApplyInflation = async () => {
+    if (!inflationRate || selectedMilestonesForInflation.length === 0) {
+      toast.error('Please enter inflation rate and select at least one milestone');
+      return;
+    }
+
+    const rate = parseFloat(inflationRate);
+    if (isNaN(rate) || rate <= 0) {
+      toast.error('Please enter a valid inflation rate');
+      return;
+    }
+
+    try {
+      const year = parseInt(inflationYear);
+      const updatedMilestones: Milestone[] = [];
+
+      for (const milestoneId of selectedMilestonesForInflation) {
+        const milestone = data.milestones.find((m) => m.id === milestoneId);
+        if (!milestone || milestone.inflation_superseded_by_co) continue;
+
+        // Calculate adjustment amount
+        const adjustmentAmount = (milestone.current_value || 0) * (rate / 100);
+        const newValue = (milestone.current_value || 0) + adjustmentAmount;
+
+        // Create new inflation adjustment record
+        const newAdjustment = {
+          year,
+          rate,
+          amount: adjustmentAmount,
+          applied_date: new Date().toISOString().split('T')[0],
+          applied_by: user?.id || null,
+        };
+
+        // Update milestone with new adjustment
+        const updatedInflationAdjustments = [
+          ...(milestone.inflation_adjustments || []),
+          newAdjustment,
+        ];
+
+        const { error } = await supabase
+          .from('milestones')
+          .update({
+            current_value: newValue,
+            inflation_adjustments: updatedInflationAdjustments,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', milestone.id);
+
+        if (error) {
+          console.error('Error applying inflation to milestone:', error);
+          toast.error(`Failed to apply inflation to ${milestone.name}: ${error.message}`);
+          continue;
+        }
+
+        updatedMilestones.push({
+          ...milestone,
+          current_value: newValue,
+          inflation_adjustments: updatedInflationAdjustments,
+          updated_at: new Date().toISOString(),
+        });
+      }
+
+      if (updatedMilestones.length > 0) {
+        setData(prev => ({
+          ...prev,
+          milestones: prev.milestones.map((m) => {
+            const updated = updatedMilestones.find((um) => um.id === m.id);
+            return updated || m;
+          }),
+        }));
+
+        toast.success(`Inflation applied to ${updatedMilestones.length} milestone(s)`);
+
+        // Reset form
+        setInflationRate('');
+        setSelectedMilestonesForInflation([]);
+        setIsApplyInflationOpen(false);
+      }
+    } catch (error: any) {
+      console.error('Error applying inflation:', error);
+      toast.error(`Failed to apply inflation: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1116,10 +1206,16 @@ export default function ContractDetailPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Milestones</CardTitle>
-              <Button size="sm" onClick={() => setIsAddMilestoneOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add Milestone
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => setIsApplyInflationOpen(true)}>
+                  <Target className="h-4 w-4 mr-1" />
+                  Apply Inflation
+                </Button>
+                <Button size="sm" onClick={() => setIsAddMilestoneOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Milestone
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               {data.milestones.length === 0 ? (
@@ -1613,6 +1709,131 @@ export default function ContractDetailPage() {
               Save Changes
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Apply Inflation Dialog */}
+      <Dialog open={isApplyInflationOpen} onOpenChange={(open) => {
+        setIsApplyInflationOpen(open);
+        if (!open) {
+          setInflationRate('');
+          setSelectedMilestonesForInflation([]);
+        }
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Apply Inflation Adjustment</DialogTitle>
+            <DialogDescription>
+              Select milestones and apply inflation rate adjustment
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="inflation_year">Year *</Label>
+                <Input
+                  id="inflation_year"
+                  type="number"
+                  value={inflationYear}
+                  onChange={(e) => setInflationYear(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="inflation_rate">Inflation Rate (%) *</Label>
+                <Input
+                  id="inflation_rate"
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g., 2.5"
+                  value={inflationRate}
+                  onChange={(e) => setInflationRate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Select Milestones *</Label>
+              {data.milestones.length === 0 ? (
+                <p className="text-sm text-gray-500">No milestones available</p>
+              ) : (
+                <div className="border rounded-md p-4 space-y-2 max-h-96 overflow-y-auto">
+                  {data.milestones.map((milestone) => {
+                    const isSelected = selectedMilestonesForInflation.includes(milestone.id);
+                    const hasInflation = milestone.inflation_adjustments && milestone.inflation_adjustments.length > 0;
+
+                    return (
+                      <div
+                        key={milestone.id}
+                        className={`flex items-start gap-3 p-2 rounded ${
+                          isSelected ? 'bg-blue-50 border border-blue-200' : ''
+                        } ${
+                          milestone.inflation_superseded_by_co ? 'opacity-50' : ''
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={milestone.inflation_superseded_by_co}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedMilestonesForInflation([
+                                ...selectedMilestonesForInflation,
+                                milestone.id,
+                              ]);
+                            } else {
+                              setSelectedMilestonesForInflation(
+                                selectedMilestonesForInflation.filter((id) => id !== milestone.id)
+                              );
+                            }
+                          }}
+                          className="mt-1"
+                        />
+                        <div className="flex-1">
+                          <div className="font-medium">{milestone.name}</div>
+                          <div className="text-xs text-gray-500">
+                            Current Value: {formatCurrency(milestone.current_value, contract.currency)}
+                            {hasInflation && (
+                              <span className="ml-2 text-blue-600">
+                                ({milestone.inflation_adjustments.length} adjustment(s) applied)
+                              </span>
+                            )}
+                            {milestone.inflation_superseded_by_co && (
+                              <span className="ml-2 text-orange-600">
+                                (Superseded by Change Order)
+                              </span>
+                            )}
+                          </div>
+                          {inflationRate && isSelected && (
+                            <div className="text-xs text-green-600 mt-1">
+                              New Value: {formatCurrency(
+                                (milestone.current_value || 0) * (1 + parseFloat(inflationRate || '0') / 100),
+                                contract.currency
+                              )}{' '}
+                              (+{formatCurrency(
+                                (milestone.current_value || 0) * (parseFloat(inflationRate || '0') / 100),
+                                contract.currency
+                              )})
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsApplyInflationOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleApplyInflation}
+              disabled={!inflationRate || selectedMilestonesForInflation.length === 0}
+            >
+              Apply Inflation
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
