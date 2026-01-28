@@ -547,7 +547,7 @@ export default function ContractDetailPage() {
     if (!authLoading && !user) {
       router.push('/login');
     }
-  }, [authLoading, user, router]);
+  }, [authLoading, user]); // Remove router from dependencies - it changes every render
 
   // Fetch contract data
   useEffect(() => {
@@ -586,16 +586,14 @@ export default function ContractDetailPage() {
 
         console.log('Contract data loaded successfully');
 
-        // Defer state update to next microtask to avoid React error #310
-        queueMicrotask(() => {
-          setContractData({
-            contract: fetchedData,
-            milestones: fetchedData.milestones || [],
-            changeOrders: fetchedData.change_orders || mockChangeOrders,
-            passthroughCosts: fetchedData.passthrough_costs || [],
-            loading: false,
-            error: null,
-          });
+        // Single state update - consolidated approach prevents multiple renders
+        setContractData({
+          contract: fetchedData,
+          milestones: fetchedData.milestones || [],
+          changeOrders: fetchedData.change_orders || mockChangeOrders,
+          passthroughCosts: fetchedData.passthrough_costs || [],
+          loading: false,
+          error: null,
         });
       } catch (error) {
         console.error('Error:', error);
