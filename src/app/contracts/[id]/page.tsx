@@ -22,7 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { ArrowLeft, FileText, Plus, Target, Receipt } from 'lucide-react';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800',
@@ -48,8 +48,11 @@ export default function ContractDetailPage() {
   const { user } = useAuth();
   const hasFetchedRef = useRef(false);
 
-  // Test: Add ONE dialog state
+  // Test: Add MULTIPLE dialog states to see if that triggers error #310
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
+  const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
+  const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -269,8 +272,12 @@ export default function ContractDetailPage() {
 
         <TabsContent value="milestones">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Milestones</CardTitle>
+              <Button size="sm" onClick={() => setIsAddMilestoneOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Milestone
+              </Button>
             </CardHeader>
             <CardContent>
               {data.milestones.length === 0 ? (
@@ -296,8 +303,12 @@ export default function ContractDetailPage() {
 
         <TabsContent value="change-orders">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Change Orders</CardTitle>
+              <Button size="sm" onClick={() => setIsAddChangeOrderOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Change Order
+              </Button>
             </CardHeader>
             <CardContent>
               {data.changeOrders.length === 0 ? (
@@ -325,8 +336,12 @@ export default function ContractDetailPage() {
 
         <TabsContent value="ptc">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle>Pass-Through Costs</CardTitle>
+              <Button size="sm" onClick={() => setIsAddPTCOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add PTC
+              </Button>
             </CardHeader>
             <CardContent>
               {data.passthroughCosts.length === 0 ? (
@@ -402,6 +417,78 @@ export default function ContractDetailPage() {
                 <p className="text-sm">{contract.notes}</p>
               </div>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Milestone Dialog (read-only for now) */}
+      <Dialog open={isAddMilestoneOpen} onOpenChange={setIsAddMilestoneOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Milestone</DialogTitle>
+            <DialogDescription>
+              This would be the form to add a new milestone (currently read-only for testing)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              In the full version, this dialog would contain inputs for:
+            </p>
+            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
+              <li>Milestone name</li>
+              <li>Milestone number</li>
+              <li>Value</li>
+              <li>Due date</li>
+              <li>Description</li>
+            </ul>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Change Order Dialog (read-only for now) */}
+      <Dialog open={isAddChangeOrderOpen} onOpenChange={setIsAddChangeOrderOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Change Order</DialogTitle>
+            <DialogDescription>
+              This would be the form to add a new change order (currently read-only for testing)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              In the full version, this dialog would contain inputs for:
+            </p>
+            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
+              <li>Change order title</li>
+              <li>Change order number</li>
+              <li>Value change</li>
+              <li>Effective date</li>
+              <li>Description</li>
+            </ul>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add PTC Dialog (read-only for now) */}
+      <Dialog open={isAddPTCOpen} onOpenChange={setIsAddPTCOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Pass-Through Cost</DialogTitle>
+            <DialogDescription>
+              This would be the form to add a new pass-through cost (currently read-only for testing)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-gray-500">
+              In the full version, this dialog would contain inputs for:
+            </p>
+            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
+              <li>Category</li>
+              <li>Description</li>
+              <li>Passthrough type</li>
+              <li>Budgeted total</li>
+              <li>Notes</li>
+            </ul>
           </div>
         </DialogContent>
       </Dialog>
