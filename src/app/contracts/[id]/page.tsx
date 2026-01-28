@@ -72,15 +72,17 @@ export default function ContractDetailPage() {
   const { user } = useAuth();
   const hasFetchedRef = useRef(false);
 
-  // Test: Add MULTIPLE dialog states to see if that triggers error #310
+  // Dialog states
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
   const [isAddMilestoneOpen, setIsAddMilestoneOpen] = useState(false);
+  const [isEditMilestoneOpen, setIsEditMilestoneOpen] = useState(false);
   const [isAddChangeOrderOpen, setIsAddChangeOrderOpen] = useState(false);
   const [isAddPTCOpen, setIsAddPTCOpen] = useState(false);
 
-  // Test: Add simple form state for milestone
+  // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
   const [milestoneValue, setMilestoneValue] = useState(0);
+  const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -178,7 +180,7 @@ export default function ContractDetailPage() {
   const totalChangeOrderValue = data.changeOrders.reduce((sum, co) => sum + (co.value_change || 0), 0);
   const totalPTCBudget = data.passthroughCosts.reduce((sum, ptc) => sum + (ptc.budgeted_total || 0), 0);
 
-  // Test handler that mutates data state
+  // Milestone handlers
   const handleAddMilestone = () => {
     if (!milestoneName) return;
 
@@ -209,19 +211,61 @@ export default function ContractDetailPage() {
       updated_at: new Date().toISOString(),
     };
 
-    // THIS is the critical test - updating the data state
     setData(prev => ({
       ...prev,
       milestones: [...prev.milestones, newMilestone],
     }));
 
-    // Show success message
     toast.success('Milestone added successfully');
 
     // Reset form and close dialog
     setMilestoneName('');
     setMilestoneValue(0);
     setIsAddMilestoneOpen(false);
+  };
+
+  const handleEditMilestone = (milestone: Milestone) => {
+    setEditingMilestone(milestone);
+    setMilestoneName(milestone.name);
+    setMilestoneValue(milestone.current_value || 0);
+    setIsEditMilestoneOpen(true);
+  };
+
+  const handleSaveEditMilestone = () => {
+    if (!editingMilestone || !milestoneName) return;
+
+    setData(prev => ({
+      ...prev,
+      milestones: prev.milestones.map(m =>
+        m.id === editingMilestone.id
+          ? {
+              ...m,
+              name: milestoneName,
+              current_value: milestoneValue,
+              updated_at: new Date().toISOString(),
+            }
+          : m
+      ),
+    }));
+
+    toast.success('Milestone updated successfully');
+
+    // Reset form and close dialog
+    setEditingMilestone(null);
+    setMilestoneName('');
+    setMilestoneValue(0);
+    setIsEditMilestoneOpen(false);
+  };
+
+  const handleDeleteMilestone = (milestoneId: string) => {
+    if (!confirm('Are you sure you want to delete this milestone?')) return;
+
+    setData(prev => ({
+      ...prev,
+      milestones: prev.milestones.filter(m => m.id !== milestoneId),
+    }));
+
+    toast.success('Milestone deleted successfully');
   };
 
   return (
@@ -384,10 +428,20 @@ export default function ContractDetailPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-2">
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleEditMilestone(m)}
+                            >
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => handleDeleteMilestone(m.id)}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -598,6 +652,48 @@ export default function ContractDetailPage() {
             </Button>
             <Button onClick={handleAddMilestone} disabled={!milestoneName}>
               Add Milestone
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Milestone Dialog */}
+      <Dialog open={isEditMilestoneOpen} onOpenChange={setIsEditMilestoneOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Milestone</DialogTitle>
+            <DialogDescription>
+              Update milestone details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="edit_milestone_name">Milestone Name *</Label>
+              <Input
+                id="edit_milestone_name"
+                placeholder="e.g., Requirements & Design Phase"
+                value={milestoneName}
+                onChange={(e) => setMilestoneName(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_milestone_value">Value ({contract.currency}) *</Label>
+              <Input
+                id="edit_milestone_value"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={milestoneValue}
+                onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsEditMilestoneOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEditMilestone} disabled={!milestoneName}>
+              Save Changes
             </Button>
           </div>
         </DialogContent>
