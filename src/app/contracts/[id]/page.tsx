@@ -83,21 +83,21 @@ export default function ContractDetailPage() {
 
   // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
-  const [milestoneValue, setMilestoneValue] = useState(0);
+  const [milestoneValue, setMilestoneValue] = useState('');
   const [milestoneDueDate, setMilestoneDueDate] = useState('');
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
 
   // Change Order form state
   const [changeOrderTitle, setChangeOrderTitle] = useState('');
   const [changeOrderNumber, setChangeOrderNumber] = useState('');
-  const [changeOrderValue, setChangeOrderValue] = useState(0);
+  const [changeOrderValue, setChangeOrderValue] = useState('');
   const [changeOrderDate, setChangeOrderDate] = useState('');
   const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
 
   // Pass-Through Cost form state
   const [ptcDescription, setPtcDescription] = useState('');
-  const [ptcBudget, setPtcBudget] = useState(0);
-  const [ptcActualSpent, setPtcActualSpent] = useState(0);
+  const [ptcBudget, setPtcBudget] = useState('');
+  const [ptcActualSpent, setPtcActualSpent] = useState('');
   const [editingPTC, setEditingPTC] = useState<PassthroughCost | null>(null);
 
   const [data, setData] = useState<{
@@ -206,9 +206,9 @@ export default function ContractDetailPage() {
       description: null,
       milestone_number: data.milestones.length + 1,
       original_due_date: milestoneDueDate || null,
-      original_value: milestoneValue,
+      original_value: parseFloat(milestoneValue) || 0,
       current_due_date: milestoneDueDate || null,
-      current_value: milestoneValue,
+      current_value: parseFloat(milestoneValue) || 0,
       status: 'pending' as const,
       completed_date: null,
       invoiced: false,
@@ -241,7 +241,7 @@ export default function ContractDetailPage() {
 
       // Reset form and close dialog
       setMilestoneName('');
-      setMilestoneValue(0);
+      setMilestoneValue('');
       setMilestoneDueDate('');
       setIsAddMilestoneOpen(false);
     } catch (error: any) {
@@ -253,7 +253,7 @@ export default function ContractDetailPage() {
   const handleEditMilestone = (milestone: Milestone) => {
     setEditingMilestone(milestone);
     setMilestoneName(milestone.name);
-    setMilestoneValue(milestone.current_value || 0);
+    setMilestoneValue(milestone.current_value?.toString() || '');
     setMilestoneDueDate(milestone.current_due_date || '');
     setIsEditMilestoneOpen(true);
   };
@@ -266,7 +266,7 @@ export default function ContractDetailPage() {
         .from('milestones')
         .update({
           name: milestoneName,
-          current_value: milestoneValue,
+          current_value: parseFloat(milestoneValue) || 0,
           current_due_date: milestoneDueDate || null,
           updated_at: new Date().toISOString(),
         })
@@ -287,7 +287,7 @@ export default function ContractDetailPage() {
             ? {
                 ...m,
                 name: milestoneName,
-                current_value: milestoneValue,
+                current_value: parseFloat(milestoneValue) || 0,
                 current_due_date: milestoneDueDate || null,
                 updated_at: new Date().toISOString(),
               }
@@ -300,7 +300,7 @@ export default function ContractDetailPage() {
       // Reset form and close dialog
       setEditingMilestone(null);
       setMilestoneName('');
-      setMilestoneValue(0);
+      setMilestoneValue('');
       setMilestoneDueDate('');
       setIsEditMilestoneOpen(false);
     } catch (error: any) {
@@ -355,7 +355,7 @@ export default function ContractDetailPage() {
       contract_id: contractId,
       title: changeOrderTitle,
       change_order_number: changeOrderNumber || null,
-      value_change: changeOrderValue,
+      value_change: parseFloat(changeOrderValue) || 0,
       effective_date: changeOrderDate || null,
       description: null,
       co_type: 'milestone_adjustment' as const,
@@ -394,7 +394,7 @@ export default function ContractDetailPage() {
       // Reset form and close dialog
       setChangeOrderTitle('');
       setChangeOrderNumber('');
-      setChangeOrderValue(0);
+      setChangeOrderValue('');
       setChangeOrderDate('');
       setIsAddChangeOrderOpen(false);
     } catch (error: any) {
@@ -407,7 +407,7 @@ export default function ContractDetailPage() {
     setEditingChangeOrder(changeOrder);
     setChangeOrderTitle(changeOrder.title);
     setChangeOrderNumber(changeOrder.change_order_number || '');
-    setChangeOrderValue(changeOrder.value_change || 0);
+    setChangeOrderValue(changeOrder.value_change?.toString() || '');
     setChangeOrderDate(changeOrder.effective_date || '');
     setIsEditChangeOrderOpen(true);
   };
@@ -421,7 +421,7 @@ export default function ContractDetailPage() {
         .update({
           title: changeOrderTitle,
           change_order_number: changeOrderNumber || null,
-          value_change: changeOrderValue,
+          value_change: parseFloat(changeOrderValue) || 0,
           effective_date: changeOrderDate || null,
         })
         .eq('id', editingChangeOrder.id);
@@ -442,7 +442,7 @@ export default function ContractDetailPage() {
                 ...co,
                 title: changeOrderTitle,
                 change_order_number: changeOrderNumber || null,
-                value_change: changeOrderValue,
+                value_change: parseFloat(changeOrderValue) || 0,
                 effective_date: changeOrderDate || null,
               }
             : co
@@ -455,7 +455,7 @@ export default function ContractDetailPage() {
       setEditingChangeOrder(null);
       setChangeOrderTitle('');
       setChangeOrderNumber('');
-      setChangeOrderValue(0);
+      setChangeOrderValue('');
       setChangeOrderDate('');
       setIsEditChangeOrderOpen(false);
     } catch (error: any) {
@@ -509,12 +509,12 @@ export default function ContractDetailPage() {
       description: ptcDescription,
       category: 'other' as const,
       passthrough_type: 'total' as const,
-      budgeted_total: ptcBudget,
+      budgeted_total: parseFloat(ptcBudget) || 0,
       budgeted_per_period: null,
       budgeted_per_unit: null,
       estimated_units: null,
       currency: contract.currency,
-      actual_spent: ptcActualSpent,
+      actual_spent: parseFloat(ptcActualSpent) || 0,
       period_start: null,
       period_end: null,
       vendor_contract_id: null,
@@ -545,8 +545,8 @@ export default function ContractDetailPage() {
 
       // Reset form and close dialog
       setPtcDescription('');
-      setPtcBudget(0);
-      setPtcActualSpent(0);
+      setPtcBudget('');
+      setPtcActualSpent('');
       setIsAddPTCOpen(false);
     } catch (error: any) {
       console.error('Error adding PTC:', error);
@@ -557,8 +557,8 @@ export default function ContractDetailPage() {
   const handleEditPTC = (ptc: PassthroughCost) => {
     setEditingPTC(ptc);
     setPtcDescription(ptc.description || '');
-    setPtcBudget(ptc.budgeted_total || 0);
-    setPtcActualSpent(ptc.actual_spent || 0);
+    setPtcBudget(ptc.budgeted_total?.toString() || '');
+    setPtcActualSpent(ptc.actual_spent?.toString() || '');
     setIsEditPTCOpen(true);
   };
 
@@ -570,8 +570,8 @@ export default function ContractDetailPage() {
         .from('passthrough_costs')
         .update({
           description: ptcDescription,
-          budgeted_total: ptcBudget,
-          actual_spent: ptcActualSpent,
+          budgeted_total: parseFloat(ptcBudget) || 0,
+          actual_spent: parseFloat(ptcActualSpent) || 0,
         })
         .eq('id', editingPTC.id);
 
@@ -590,8 +590,8 @@ export default function ContractDetailPage() {
             ? {
                 ...ptc,
                 description: ptcDescription,
-                budgeted_total: ptcBudget,
-                actual_spent: ptcActualSpent,
+                budgeted_total: parseFloat(ptcBudget) || 0,
+                actual_spent: parseFloat(ptcActualSpent) || 0,
               }
             : ptc
         ),
@@ -602,8 +602,8 @@ export default function ContractDetailPage() {
       // Reset form and close dialog
       setEditingPTC(null);
       setPtcDescription('');
-      setPtcBudget(0);
-      setPtcActualSpent(0);
+      setPtcBudget('');
+      setPtcActualSpent('');
       setIsEditPTCOpen(false);
     } catch (error: any) {
       console.error('Error updating PTC:', error);
@@ -1041,7 +1041,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={milestoneValue}
-                onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setMilestoneValue(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -1092,7 +1092,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={milestoneValue}
-                onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setMilestoneValue(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -1152,7 +1152,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={changeOrderValue}
-                onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setChangeOrderValue(e.target.value)}
               />
               <p className="text-xs text-gray-500">
                 Positive for increase, negative for decrease
@@ -1185,7 +1185,7 @@ export default function ContractDetailPage() {
         if (!open) {
           setChangeOrderTitle('');
           setChangeOrderNumber('');
-          setChangeOrderValue(0);
+          setChangeOrderValue('');
           setChangeOrderDate('');
         }
       }}>
@@ -1223,7 +1223,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={changeOrderValue}
-                onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setChangeOrderValue(e.target.value)}
               />
               <p className="text-xs text-gray-500">
                 Positive for increase, negative for decrease
@@ -1277,7 +1277,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={ptcBudget}
-                onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setPtcBudget(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -1288,7 +1288,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={ptcActualSpent}
-                onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setPtcActualSpent(e.target.value)}
               />
             </div>
           </div>
@@ -1308,8 +1308,8 @@ export default function ContractDetailPage() {
         setIsAddPTCOpen(open);
         if (!open) {
           setPtcDescription('');
-          setPtcBudget(0);
-          setPtcActualSpent(0);
+          setPtcBudget('');
+          setPtcActualSpent('');
         }
       }}>
         <DialogContent>
@@ -1337,7 +1337,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={ptcBudget}
-                onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setPtcBudget(e.target.value)}
               />
             </div>
             <div className="grid gap-2">
@@ -1348,7 +1348,7 @@ export default function ContractDetailPage() {
                 step="any"
                 placeholder="0.00"
                 value={ptcActualSpent}
-                onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
+                onChange={(e) => setPtcActualSpent(e.target.value)}
               />
             </div>
           </div>
