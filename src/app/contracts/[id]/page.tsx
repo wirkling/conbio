@@ -25,7 +25,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ArrowLeft, FileText, Plus, Target, Receipt } from 'lucide-react';
+import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2 } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800',
@@ -44,6 +52,19 @@ function formatCurrency(value: number | null, currency: string = 'EUR') {
     maximumFractionDigits: 0,
   }).format(value);
 }
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return 'N/A';
+  return new Date(dateString).toLocaleDateString('de-DE');
+}
+
+const milestoneStatusColors: Record<string, string> = {
+  pending: 'bg-gray-100 text-gray-800',
+  in_progress: 'bg-blue-100 text-blue-800',
+  completed: 'bg-green-100 text-green-800',
+  delayed: 'bg-orange-100 text-orange-800',
+  cancelled: 'bg-red-100 text-red-800',
+};
 
 export default function ContractDetailPage() {
   const params = useParams();
@@ -332,23 +353,49 @@ export default function ContractDetailPage() {
                 Add Milestone
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {data.milestones.length === 0 ? (
-                <p className="text-gray-500">No milestones defined</p>
+                <p className="text-gray-500 p-6">No milestones defined</p>
               ) : (
-                <ul className="space-y-2">
-                  {data.milestones.map((m) => (
-                    <li key={m.id} className="flex justify-between items-center border-b pb-2">
-                      <div>
-                        <p className="font-medium">{m.name}</p>
-                        <p className="text-xs text-gray-500">
-                          Status: {m.status} {m.current_due_date && `• Due: ${m.current_due_date}`}
-                        </p>
-                      </div>
-                      <span className="font-medium">{formatCurrency(m.current_value, contract.currency)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>#</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead className="text-right">Value</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.milestones.map((m) => (
+                      <TableRow key={m.id}>
+                        <TableCell className="font-medium">{m.milestone_number || '-'}</TableCell>
+                        <TableCell>{m.name}</TableCell>
+                        <TableCell>
+                          <Badge className={milestoneStatusColors[m.status]}>
+                            {m.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{formatDate(m.current_due_date)}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(m.current_value, contract.currency)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
@@ -363,25 +410,44 @@ export default function ContractDetailPage() {
                 Add Change Order
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {data.changeOrders.length === 0 ? (
-                <p className="text-gray-500">No change orders</p>
+                <p className="text-gray-500 p-6">No change orders</p>
               ) : (
-                <ul className="space-y-2">
-                  {data.changeOrders.map((co) => (
-                    <li key={co.id} className="flex justify-between items-center border-b pb-2">
-                      <div>
-                        <p className="font-medium">{co.title}</p>
-                        <p className="text-xs text-gray-500">
-                          {co.change_order_number} {co.effective_date && `• ${co.effective_date}`}
-                        </p>
-                      </div>
-                      <span className={`font-medium ${(co.value_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {(co.value_change || 0) >= 0 ? '+' : ''}{formatCurrency(co.value_change || 0, contract.currency)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Title</TableHead>
+                      <TableHead>CO Number</TableHead>
+                      <TableHead>Effective Date</TableHead>
+                      <TableHead className="text-right">Value Change</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.changeOrders.map((co) => (
+                      <TableRow key={co.id}>
+                        <TableCell className="font-medium">{co.title}</TableCell>
+                        <TableCell>{co.change_order_number || '-'}</TableCell>
+                        <TableCell>{formatDate(co.effective_date)}</TableCell>
+                        <TableCell className={`text-right font-medium ${(co.value_change || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {(co.value_change || 0) >= 0 ? '+' : ''}
+                          {formatCurrency(co.value_change || 0, contract.currency)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
@@ -396,26 +462,47 @@ export default function ContractDetailPage() {
                 Add PTC
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {data.passthroughCosts.length === 0 ? (
-                <p className="text-gray-500">No pass-through costs defined</p>
+                <p className="text-gray-500 p-6">No pass-through costs defined</p>
               ) : (
-                <ul className="space-y-2">
-                  {data.passthroughCosts.map((ptc) => (
-                    <li key={ptc.id} className="flex justify-between items-center border-b pb-2">
-                      <div>
-                        <p className="font-medium">{ptc.description}</p>
-                        <p className="text-xs text-gray-500">
-                          {ptc.category} • Type: {ptc.passthrough_type}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium">{formatCurrency(ptc.budgeted_total, ptc.currency)}</p>
-                        <p className="text-xs text-gray-500">Spent: {formatCurrency(ptc.actual_spent, ptc.currency)}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Category</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead className="text-right">Budget</TableHead>
+                      <TableHead className="text-right">Actual Spent</TableHead>
+                      <TableHead className="w-20">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {data.passthroughCosts.map((ptc) => (
+                      <TableRow key={ptc.id}>
+                        <TableCell className="font-medium">{ptc.description || '-'}</TableCell>
+                        <TableCell>{ptc.category}</TableCell>
+                        <TableCell>{ptc.passthrough_type}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {formatCurrency(ptc.budgeted_total, ptc.currency)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatCurrency(ptc.actual_spent, ptc.currency)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               )}
             </CardContent>
           </Card>
