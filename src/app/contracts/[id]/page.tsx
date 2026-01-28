@@ -215,7 +215,13 @@ export default function ContractDetailPage() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error adding milestone:', error);
+        toast.error(`Failed to add milestone: ${error.message}`);
+        return;
+      }
+
+      console.log('Milestone added to database:', insertedMilestone);
 
       setData(prev => ({
         ...prev,
@@ -228,9 +234,9 @@ export default function ContractDetailPage() {
       setMilestoneName('');
       setMilestoneValue(0);
       setIsAddMilestoneOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding milestone:', error);
-      toast.error('Failed to add milestone');
+      toast.error(`Failed to add milestone: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -254,7 +260,13 @@ export default function ContractDetailPage() {
         })
         .eq('id', editingMilestone.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error updating milestone:', error);
+        toast.error(`Failed to update milestone: ${error.message}`);
+        return;
+      }
+
+      console.log('Milestone updated in database:', editingMilestone.id);
 
       setData(prev => ({
         ...prev,
@@ -277,9 +289,9 @@ export default function ContractDetailPage() {
       setMilestoneName('');
       setMilestoneValue(0);
       setIsEditMilestoneOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating milestone:', error);
-      toast.error('Failed to update milestone');
+      toast.error(`Failed to update milestone: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -292,7 +304,13 @@ export default function ContractDetailPage() {
         .delete()
         .eq('id', milestoneId);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase error deleting milestone:', error);
+        toast.error(`Failed to delete milestone: ${error.message}`);
+        return;
+      }
+
+      console.log('Milestone deleted from database:', milestoneId);
 
       setData(prev => ({
         ...prev,
@@ -300,9 +318,9 @@ export default function ContractDetailPage() {
       }));
 
       toast.success('Milestone deleted successfully');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting milestone:', error);
-      toast.error('Failed to delete milestone');
+      toast.error(`Failed to delete milestone: ${error?.message || 'Unknown error'}`);
     }
   };
 
