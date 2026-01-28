@@ -382,11 +382,66 @@ export default function ContractDetailPage() {
 
   const handleMarkMilestoneComplete = async (milestone: Milestone) => {
     try {
+      const completedDate = new Date().toISOString().split('T')[0];
+      let adjustmentType: 'bonus' | 'penalty' | null = null;
+      let adjustmentAmount: number | null = null;
+      let adjustmentPercentage: number | null = null;
+      let adjustmentReason: string | null = null;
+
+      // Calculate bonus/malus if contract has terms
+      if (contract.bonus_malus_terms && milestone.current_due_date) {
+        const dueDate = new Date(milestone.current_due_date);
+        const completedDateTime = new Date(completedDate);
+        const daysDiff = Math.floor((dueDate.getTime() - completedDateTime.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (contract.bonus_malus_terms.type === 'standard') {
+          const terms = contract.bonus_malus_terms;
+
+          // Early completion bonus
+          if (daysDiff > 0) {
+            const weeksDiff = Math.floor(daysDiff / 7);
+            if (weeksDiff >= terms.early_threshold_weeks) {
+              adjustmentType = 'bonus';
+              adjustmentPercentage = terms.early_bonus_percent;
+              adjustmentAmount = (milestone.current_value || 0) * (terms.early_bonus_percent / 100);
+              adjustmentReason = `Completed ${weeksDiff} weeks early`;
+            }
+          }
+          // Late completion penalty
+          else if (daysDiff < 0) {
+            adjustmentType = 'penalty';
+            const absDays = Math.abs(daysDiff);
+
+            let periods = 0;
+            if (terms.penalty_per_period === 'day') {
+              periods = absDays;
+            } else if (terms.penalty_per_period === 'week') {
+              periods = Math.floor(absDays / 7);
+            } else if (terms.penalty_per_period === 'month') {
+              periods = Math.floor(absDays / 30);
+            }
+
+            const penaltyPercent = Math.min(
+              terms.late_penalty_percent * periods,
+              terms.max_penalty_percent
+            );
+            adjustmentPercentage = -penaltyPercent;
+            adjustmentAmount = -(milestone.current_value || 0) * (penaltyPercent / 100);
+            adjustmentReason = `Completed ${periods} ${terms.penalty_per_period}(s) late`;
+          }
+        }
+      }
+
       const { error } = await supabase
         .from('milestones')
         .update({
           status: 'completed' as const,
-          completed_date: new Date().toISOString().split('T')[0],
+          completed_date: completedDate,
+          adjustment_type: adjustmentType,
+          adjustment_amount: adjustmentAmount,
+          adjustment_percentage: adjustmentPercentage,
+          adjustment_reason: adjustmentReason,
+          adjustment_calculated_at: adjustmentType ? new Date().toISOString() : null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', milestone.id);
@@ -404,14 +459,26 @@ export default function ContractDetailPage() {
             ? {
                 ...m,
                 status: 'completed' as const,
-                completed_date: new Date().toISOString().split('T')[0],
+                completed_date: completedDate,
+                adjustment_type: adjustmentType,
+                adjustment_amount: adjustmentAmount,
+                adjustment_percentage: adjustmentPercentage,
+                adjustment_reason: adjustmentReason,
+                adjustment_calculated_at: adjustmentType ? new Date().toISOString() : null,
                 updated_at: new Date().toISOString(),
               }
             : m
         ),
       }));
 
-      toast.success('Milestone marked as complete');
+      if (adjustmentType) {
+        const adjustmentText = adjustmentType === 'bonus' ? 'Bonus' : 'Penalty';
+        toast.success(
+          `Milestone completed! ${adjustmentText}: ${formatCurrency(Math.abs(adjustmentAmount || 0), contract.currency)} (${adjustmentPercentage}%)`
+        );
+      } else {
+        toast.success('Milestone marked as complete');
+      }
     } catch (error: any) {
       console.error('Error marking milestone as complete:', error);
       toast.error(`Failed to mark milestone as complete: ${error?.message || 'Unknown error'}`);
@@ -1293,7 +1360,7 @@ export default function ContractDetailPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {hasChanges ? (
+                            {hasChanges || m.adjustment_type || (m.inflation_adjustments && m.inflation_adjustments.length > 0) ? (
                               <div className="text-xs space-y-1">
                                 {hasValueChanged && (
                                   <div className={valueChange > 0 ? 'text-green-600' : 'text-red-600'}>
@@ -1309,6 +1376,13 @@ export default function ContractDetailPage() {
                                 {m.inflation_adjustments && m.inflation_adjustments.length > 0 && (
                                   <div className="text-blue-600">
                                     Inflation: {m.inflation_adjustments.length}x
+                                  </div>
+                                )}
+                                {m.adjustment_type && (
+                                  <div className={m.adjustment_type === 'bonus' ? 'text-green-600 font-medium' : 'text-red-600 font-medium'}>
+                                    {m.adjustment_type === 'bonus' ? '🎁 Bonus: ' : '⚠️ Penalty: '}
+                                    {m.adjustment_amount && m.adjustment_amount > 0 ? '+' : ''}
+                                    {formatCurrency(m.adjustment_amount || 0, contract.currency)}
                                   </div>
                                 )}
                               </div>
