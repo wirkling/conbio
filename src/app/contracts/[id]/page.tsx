@@ -84,6 +84,7 @@ export default function ContractDetailPage() {
   // Milestone form state
   const [milestoneName, setMilestoneName] = useState('');
   const [milestoneValue, setMilestoneValue] = useState(0);
+  const [milestoneDueDate, setMilestoneDueDate] = useState('');
   const [editingMilestone, setEditingMilestone] = useState<Milestone | null>(null);
 
   // Change Order form state
@@ -204,9 +205,9 @@ export default function ContractDetailPage() {
       name: milestoneName,
       description: null,
       milestone_number: data.milestones.length + 1,
-      original_due_date: null,
+      original_due_date: milestoneDueDate || null,
       original_value: milestoneValue,
-      current_due_date: null,
+      current_due_date: milestoneDueDate || null,
       current_value: milestoneValue,
       status: 'pending' as const,
       completed_date: null,
@@ -241,6 +242,7 @@ export default function ContractDetailPage() {
       // Reset form and close dialog
       setMilestoneName('');
       setMilestoneValue(0);
+      setMilestoneDueDate('');
       setIsAddMilestoneOpen(false);
     } catch (error: any) {
       console.error('Error adding milestone:', error);
@@ -252,6 +254,7 @@ export default function ContractDetailPage() {
     setEditingMilestone(milestone);
     setMilestoneName(milestone.name);
     setMilestoneValue(milestone.current_value || 0);
+    setMilestoneDueDate(milestone.current_due_date || '');
     setIsEditMilestoneOpen(true);
   };
 
@@ -264,6 +267,7 @@ export default function ContractDetailPage() {
         .update({
           name: milestoneName,
           current_value: milestoneValue,
+          current_due_date: milestoneDueDate || null,
           updated_at: new Date().toISOString(),
         })
         .eq('id', editingMilestone.id);
@@ -284,6 +288,7 @@ export default function ContractDetailPage() {
                 ...m,
                 name: milestoneName,
                 current_value: milestoneValue,
+                current_due_date: milestoneDueDate || null,
                 updated_at: new Date().toISOString(),
               }
             : m
@@ -296,6 +301,7 @@ export default function ContractDetailPage() {
       setEditingMilestone(null);
       setMilestoneName('');
       setMilestoneValue(0);
+      setMilestoneDueDate('');
       setIsEditMilestoneOpen(false);
     } catch (error: any) {
       console.error('Error updating milestone:', error);
@@ -1038,6 +1044,15 @@ export default function ContractDetailPage() {
                 onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
               />
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="milestone_due_date">Due Date</Label>
+              <Input
+                id="milestone_due_date"
+                type="date"
+                value={milestoneDueDate}
+                onChange={(e) => setMilestoneDueDate(e.target.value)}
+              />
+            </div>
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setIsAddMilestoneOpen(false)}>
@@ -1078,6 +1093,15 @@ export default function ContractDetailPage() {
                 placeholder="0.00"
                 value={milestoneValue}
                 onChange={(e) => setMilestoneValue(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="edit_milestone_due_date">Due Date</Label>
+              <Input
+                id="edit_milestone_due_date"
+                type="date"
+                value={milestoneDueDate}
+                onChange={(e) => setMilestoneDueDate(e.target.value)}
               />
             </div>
           </div>
