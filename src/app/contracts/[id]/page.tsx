@@ -14,7 +14,15 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { ArrowLeft, FileText } from 'lucide-react';
 
 const statusColors: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-800',
@@ -39,6 +47,9 @@ export default function ContractDetailPage() {
   const contractId = params.id as string;
   const { user } = useAuth();
   const hasFetchedRef = useRef(false);
+
+  // Test: Add ONE dialog state
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
   const [data, setData] = useState<{
     contract: Contract | null;
@@ -149,7 +160,13 @@ export default function ContractDetailPage() {
             <p className="text-gray-500">{contract.contract_number}</p>
           </div>
         </div>
-        <Badge className={statusColors[contract.status]}>{contract.status}</Badge>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => setIsDetailsDialogOpen(true)}>
+            <FileText className="h-4 w-4 mr-2" />
+            View Details
+          </Button>
+          <Badge className={statusColors[contract.status]}>{contract.status}</Badge>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -336,6 +353,58 @@ export default function ContractDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Test Dialog - Read-only contract details */}
+      <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Full Contract Details</DialogTitle>
+            <DialogDescription>Complete information about this contract</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm font-medium text-gray-500">Contract Number</p>
+                <p className="text-sm">{contract.contract_number || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Type</p>
+                <p className="text-sm">{contract.contract_type}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Start Date</p>
+                <p className="text-sm">{contract.start_date || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">End Date</p>
+                <p className="text-sm">{contract.end_date || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Original Value</p>
+                <p className="text-sm">{formatCurrency(contract.original_value, contract.currency)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Current Value</p>
+                <p className="text-sm">{formatCurrency(contract.current_value, contract.currency)}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Payment Terms</p>
+                <p className="text-sm">{contract.payment_terms || 'N/A'}</p>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-500">Auto Renew</p>
+                <p className="text-sm">{contract.auto_renew ? 'Yes' : 'No'}</p>
+              </div>
+            </div>
+            {contract.notes && (
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-1">Notes</p>
+                <p className="text-sm">{contract.notes}</p>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
