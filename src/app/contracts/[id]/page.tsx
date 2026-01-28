@@ -342,6 +342,61 @@ export default function ContractDetailPage() {
   };
 
   // Change Order handlers
+  const handleAddChangeOrder = async () => {
+    if (!changeOrderTitle) return;
+
+    const newChangeOrderData = {
+      contract_id: contractId,
+      title: changeOrderTitle,
+      change_order_number: changeOrderNumber || null,
+      value_change: changeOrderValue,
+      effective_date: changeOrderDate || null,
+      description: null,
+      co_type: 'milestone_adjustment' as const,
+      direct_cost_change: null,
+      ptc_change: null,
+      document_url: null,
+      is_document_sharepoint: false,
+      invoiced_immediately: false,
+      invoiced_date: null,
+      scope_change_summary: null,
+      created_by: user?.id || null,
+    };
+
+    try {
+      const { data: insertedChangeOrder, error } = await supabase
+        .from('change_orders')
+        .insert([newChangeOrderData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error adding change order:', error);
+        toast.error(`Failed to add change order: ${error.message}`);
+        return;
+      }
+
+      console.log('Change order added to database:', insertedChangeOrder);
+
+      setData(prev => ({
+        ...prev,
+        changeOrders: [...prev.changeOrders, insertedChangeOrder],
+      }));
+
+      toast.success('Change order added successfully');
+
+      // Reset form and close dialog
+      setChangeOrderTitle('');
+      setChangeOrderNumber('');
+      setChangeOrderValue(0);
+      setChangeOrderDate('');
+      setIsAddChangeOrderOpen(false);
+    } catch (error: any) {
+      console.error('Error adding change order:', error);
+      toast.error(`Failed to add change order: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const handleEditChangeOrder = (changeOrder: ChangeOrder) => {
     setEditingChangeOrder(changeOrder);
     setChangeOrderTitle(changeOrder.title);
@@ -440,6 +495,59 @@ export default function ContractDetailPage() {
   };
 
   // Pass-Through Cost handlers
+  const handleAddPTC = async () => {
+    if (!ptcDescription) return;
+
+    const newPTCData = {
+      contract_id: contractId,
+      description: ptcDescription,
+      category: 'other' as const,
+      passthrough_type: 'total' as const,
+      budgeted_total: ptcBudget,
+      budgeted_per_period: null,
+      budgeted_per_unit: null,
+      estimated_units: null,
+      currency: contract.currency,
+      actual_spent: ptcActualSpent,
+      period_start: null,
+      period_end: null,
+      vendor_contract_id: null,
+      notes: null,
+    };
+
+    try {
+      const { data: insertedPTC, error } = await supabase
+        .from('passthrough_costs')
+        .insert([newPTCData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Supabase error adding PTC:', error);
+        toast.error(`Failed to add pass-through cost: ${error.message}`);
+        return;
+      }
+
+      console.log('PTC added to database:', insertedPTC);
+
+      setData(prev => ({
+        ...prev,
+        passthroughCosts: [...prev.passthroughCosts, insertedPTC],
+      }));
+
+      toast.success('Pass-through cost added successfully');
+
+      // Reset form and close dialog
+      setPtcDescription('');
+      setPtcBudget(0);
+      setPtcActualSpent(0);
+      setIsAddPTCOpen(false);
+    } catch (error: any) {
+      console.error('Error adding PTC:', error);
+      toast.error(`Failed to add pass-through cost: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const handleEditPTC = (ptc: PassthroughCost) => {
     setEditingPTC(ptc);
     setPtcDescription(ptc.description || '');
@@ -1047,26 +1155,73 @@ export default function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Change Order Dialog (read-only for now) */}
-      <Dialog open={isAddChangeOrderOpen} onOpenChange={setIsAddChangeOrderOpen}>
+      {/* Add Change Order Dialog */}
+      <Dialog open={isAddChangeOrderOpen} onOpenChange={(open) => {
+        setIsAddChangeOrderOpen(open);
+        if (!open) {
+          setChangeOrderTitle('');
+          setChangeOrderNumber('');
+          setChangeOrderValue(0);
+          setChangeOrderDate('');
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Change Order</DialogTitle>
             <DialogDescription>
-              This would be the form to add a new change order (currently read-only for testing)
+              Create a new change order for this contract
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-gray-500">
-              In the full version, this dialog would contain inputs for:
-            </p>
-            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
-              <li>Change order title</li>
-              <li>Change order number</li>
-              <li>Value change</li>
-              <li>Effective date</li>
-              <li>Description</li>
-            </ul>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="add_co_title">Title *</Label>
+              <Input
+                id="add_co_title"
+                placeholder="e.g., Scope Extension - Phase 2"
+                value={changeOrderTitle}
+                onChange={(e) => setChangeOrderTitle(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add_co_number">Change Order Number</Label>
+              <Input
+                id="add_co_number"
+                placeholder="e.g., CO-002"
+                value={changeOrderNumber}
+                onChange={(e) => setChangeOrderNumber(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add_co_value">Value Change ({contract.currency})</Label>
+              <Input
+                id="add_co_value"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={changeOrderValue}
+                onChange={(e) => setChangeOrderValue(parseFloat(e.target.value) || 0)}
+              />
+              <p className="text-xs text-gray-500">
+                Positive for increase, negative for decrease
+              </p>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add_co_date">Effective Date</Label>
+              <Input
+                id="add_co_date"
+                type="date"
+                value={changeOrderDate}
+                onChange={(e) => setChangeOrderDate(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsAddChangeOrderOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddChangeOrder} disabled={!changeOrderTitle}>
+              Add Change Order
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -1124,26 +1279,62 @@ export default function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add PTC Dialog (read-only for now) */}
-      <Dialog open={isAddPTCOpen} onOpenChange={setIsAddPTCOpen}>
+      {/* Add PTC Dialog */}
+      <Dialog open={isAddPTCOpen} onOpenChange={(open) => {
+        setIsAddPTCOpen(open);
+        if (!open) {
+          setPtcDescription('');
+          setPtcBudget(0);
+          setPtcActualSpent(0);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Pass-Through Cost</DialogTitle>
             <DialogDescription>
-              This would be the form to add a new pass-through cost (currently read-only for testing)
+              Create a new pass-through cost category for this contract
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <p className="text-sm text-gray-500">
-              In the full version, this dialog would contain inputs for:
-            </p>
-            <ul className="list-disc list-inside text-sm mt-2 space-y-1 text-gray-600">
-              <li>Category</li>
-              <li>Description</li>
-              <li>Passthrough type</li>
-              <li>Budgeted total</li>
-              <li>Notes</li>
-            </ul>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="add_ptc_description">Description *</Label>
+              <Input
+                id="add_ptc_description"
+                placeholder="e.g., Client site visits & workshops"
+                value={ptcDescription}
+                onChange={(e) => setPtcDescription(e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add_ptc_budget">Budget ({contract.currency}) *</Label>
+              <Input
+                id="add_ptc_budget"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={ptcBudget}
+                onChange={(e) => setPtcBudget(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="add_ptc_actual">Actual Spent ({contract.currency})</Label>
+              <Input
+                id="add_ptc_actual"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                value={ptcActualSpent}
+                onChange={(e) => setPtcActualSpent(parseFloat(e.target.value) || 0)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsAddPTCOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddPTC} disabled={!ptcDescription}>
+              Add Pass-Through Cost
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
