@@ -37,7 +37,14 @@ import {
 } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2, MoreHorizontal, CheckCheck, DollarSign, Banknote } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -364,6 +371,120 @@ export default function ContractDetailPage() {
     } catch (error: any) {
       console.error('Error deleting milestone:', error);
       toast.error(`Failed to delete milestone: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleMarkMilestoneComplete = async (milestone: Milestone) => {
+    try {
+      const { error } = await supabase
+        .from('milestones')
+        .update({
+          status: 'completed' as const,
+          completed_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', milestone.id);
+
+      if (error) {
+        console.error('Error marking milestone as complete:', error);
+        toast.error(`Failed to mark milestone as complete: ${error.message}`);
+        return;
+      }
+
+      setData(prev => ({
+        ...prev,
+        milestones: prev.milestones.map((m) =>
+          m.id === milestone.id
+            ? {
+                ...m,
+                status: 'completed' as const,
+                completed_date: new Date().toISOString().split('T')[0],
+                updated_at: new Date().toISOString(),
+              }
+            : m
+        ),
+      }));
+
+      toast.success('Milestone marked as complete');
+    } catch (error: any) {
+      console.error('Error marking milestone as complete:', error);
+      toast.error(`Failed to mark milestone as complete: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleMarkMilestoneInvoiced = async (milestone: Milestone) => {
+    try {
+      const { error } = await supabase
+        .from('milestones')
+        .update({
+          invoiced: true,
+          invoiced_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', milestone.id);
+
+      if (error) {
+        console.error('Error marking milestone as invoiced:', error);
+        toast.error(`Failed to mark milestone as invoiced: ${error.message}`);
+        return;
+      }
+
+      setData(prev => ({
+        ...prev,
+        milestones: prev.milestones.map((m) =>
+          m.id === milestone.id
+            ? {
+                ...m,
+                invoiced: true,
+                invoiced_date: new Date().toISOString().split('T')[0],
+                updated_at: new Date().toISOString(),
+              }
+            : m
+        ),
+      }));
+
+      toast.success('Milestone marked as invoiced');
+    } catch (error: any) {
+      console.error('Error marking milestone as invoiced:', error);
+      toast.error(`Failed to mark milestone as invoiced: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleMarkMilestonePaid = async (milestone: Milestone) => {
+    try {
+      const { error } = await supabase
+        .from('milestones')
+        .update({
+          paid: true,
+          paid_date: new Date().toISOString().split('T')[0],
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', milestone.id);
+
+      if (error) {
+        console.error('Error marking milestone as paid:', error);
+        toast.error(`Failed to mark milestone as paid: ${error.message}`);
+        return;
+      }
+
+      setData(prev => ({
+        ...prev,
+        milestones: prev.milestones.map((m) =>
+          m.id === milestone.id
+            ? {
+                ...m,
+                paid: true,
+                paid_date: new Date().toISOString().split('T')[0],
+                updated_at: new Date().toISOString(),
+              }
+            : m
+        ),
+      }));
+
+      toast.success('Milestone marked as paid');
+    } catch (error: any) {
+      console.error('Error marking milestone as paid:', error);
+      toast.error(`Failed to mark milestone as paid: ${error?.message || 'Unknown error'}`);
     }
   };
 
@@ -1033,9 +1154,25 @@ export default function ContractDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge className={milestoneStatusColors[m.status]}>
-                              {m.status}
-                            </Badge>
+                            <div className="flex flex-col gap-1">
+                              <Badge className={milestoneStatusColors[m.status]}>
+                                {m.status}
+                              </Badge>
+                              <div className="flex gap-2 text-xs">
+                                {m.invoiced && (
+                                  <span className="text-blue-600 flex items-center gap-1">
+                                    <DollarSign className="h-3 w-3" />
+                                    Invoiced
+                                  </span>
+                                )}
+                                {m.paid && (
+                                  <span className="text-green-600 flex items-center gap-1">
+                                    <CheckCheck className="h-3 w-3" />
+                                    Paid
+                                  </span>
+                                )}
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell>
                             <div>
@@ -1084,24 +1221,45 @@ export default function ContractDetailPage() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleEditMilestone(m)}
-                              >
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => handleDeleteMilestone(m.id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {m.status !== 'completed' && (
+                                  <DropdownMenuItem onClick={() => handleMarkMilestoneComplete(m)}>
+                                    <CheckCircle2 className="h-4 w-4 mr-2" />
+                                    Mark Complete
+                                  </DropdownMenuItem>
+                                )}
+                                {!m.invoiced && (
+                                  <DropdownMenuItem onClick={() => handleMarkMilestoneInvoiced(m)}>
+                                    <DollarSign className="h-4 w-4 mr-2" />
+                                    Mark Invoiced
+                                  </DropdownMenuItem>
+                                )}
+                                {!m.paid && m.invoiced && (
+                                  <DropdownMenuItem onClick={() => handleMarkMilestonePaid(m)}>
+                                    <Banknote className="h-4 w-4 mr-2" />
+                                    Mark Paid
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onClick={() => handleEditMilestone(m)}>
+                                  <Edit className="h-4 w-4 mr-2" />
+                                  Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteMilestone(m.id)}
+                                  className="text-red-600"
+                                >
+                                  <Trash2 className="h-4 w-4 mr-2" />
+                                  Delete
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
                           </TableCell>
                         </TableRow>
                       );
