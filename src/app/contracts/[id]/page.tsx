@@ -5,7 +5,16 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Contract, Milestone, PassthroughCost, ChangeOrder } from '@/types/database';
+import {
+  Contract,
+  Milestone,
+  PassthroughCost,
+  ChangeOrder,
+  ChangeOrderFormData,
+  MilestoneAdjustmentInput,
+  PassthroughAdjustmentInput,
+  ChangeOrderType,
+} from '@/types/database';
 import { toast } from 'sonner';
 import {
   Card,
@@ -24,8 +33,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
-import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2 } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
+import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2 } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -93,6 +105,14 @@ export default function ContractDetailPage() {
   const [changeOrderValue, setChangeOrderValue] = useState('');
   const [changeOrderDate, setChangeOrderDate] = useState('');
   const [editingChangeOrder, setEditingChangeOrder] = useState<ChangeOrder | null>(null);
+
+  // Enhanced Change Order multi-step form state
+  const [coFormStep, setCoFormStep] = useState(1);
+  const [coFormData, setCoFormData] = useState<Partial<ChangeOrderFormData>>({
+    co_type: 'milestone_adjustment',
+    milestone_adjustments: [],
+    ptc_adjustments: [],
+  });
 
   // Pass-Through Cost form state
   const [ptcDescription, setPtcDescription] = useState('');
@@ -349,27 +369,57 @@ export default function ContractDetailPage() {
 
   // Change Order handlers
   const handleAddChangeOrder = async () => {
-    if (!changeOrderTitle) return;
-
-    const newChangeOrderData = {
-      contract_id: contractId,
-      title: changeOrderTitle,
-      change_order_number: changeOrderNumber || null,
-      value_change: parseFloat(changeOrderValue) || 0,
-      effective_date: changeOrderDate || null,
-      description: null,
-      co_type: 'milestone_adjustment' as const,
-      direct_cost_change: null,
-      ptc_change: null,
-      document_url: null,
-      is_document_sharepoint: false,
-      invoiced_immediately: false,
-      invoiced_date: null,
-      scope_change_summary: null,
-      // Don't set created_by - let database handle it with trigger or default
-    };
+    if (!coFormData.title) {
+      toast.error('Title is required');
+      return;
+    }
 
     try {
+      // 1. Calculate direct cost change based on CO type
+      let directCostChange = coFormData.direct_cost_change || 0;
+      let ptcChange = 0;
+
+      // For milestone adjustments, calculate from milestone_adjustments array
+      if (coFormData.co_type === 'milestone_adjustment' && coFormData.milestone_adjustments) {
+        directCostChange = coFormData.milestone_adjustments.reduce((sum, adj) => {
+          const milestone = data.milestones.find((m) => m.id === adj.milestone_id);
+          const change = (adj.new_value || 0) - (milestone?.current_value || 0);
+          return sum + change;
+        }, 0);
+      }
+
+      // For PTC-related types, calculate from ptc_adjustments array
+      if (
+        (coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') &&
+        coFormData.ptc_adjustments
+      ) {
+        ptcChange = coFormData.ptc_adjustments.reduce((sum, adj) => {
+          const ptc = data.passthroughCosts.find((p) => p.id === adj.passthrough_cost_id);
+          const change = adj.new_budget - (ptc?.budgeted_total || 0);
+          return sum + change;
+        }, 0);
+      }
+
+      // 2. Create change order record
+      const newChangeOrderData = {
+        contract_id: contractId,
+        title: coFormData.title,
+        change_order_number: coFormData.change_order_number || null,
+        description: coFormData.description || null,
+        effective_date: coFormData.effective_date || new Date().toISOString().split('T')[0],
+        co_type: coFormData.co_type,
+        direct_cost_change: directCostChange,
+        ptc_change: ptcChange,
+        value_change: directCostChange, // For backward compatibility
+        document_url: coFormData.document_sharepoint_url || null,
+        is_document_sharepoint: !!coFormData.document_sharepoint_url,
+        invoiced_immediately: coFormData.invoiced_immediately || false,
+        invoiced_date: coFormData.invoiced_immediately
+          ? new Date().toISOString().split('T')[0]
+          : null,
+        scope_change_summary: coFormData.scope_change_summary || null,
+      };
+
       const { data: insertedChangeOrder, error } = await supabase
         .from('change_orders')
         .insert([newChangeOrderData])
@@ -384,18 +434,64 @@ export default function ContractDetailPage() {
 
       console.log('Change order added to database:', insertedChangeOrder);
 
+      // 3. Handle lump_sum_milestone type - create new milestone
+      if (coFormData.co_type === 'lump_sum_milestone') {
+        const newMilestoneData = {
+          contract_id: contractId,
+          name: coFormData.new_milestone_name || `${coFormData.title} - Milestone`,
+          description: null,
+          milestone_number: data.milestones.length + 1,
+          original_due_date: coFormData.new_milestone_due_date || null,
+          original_value: coFormData.direct_cost_change || 0,
+          current_due_date: coFormData.new_milestone_due_date || null,
+          current_value: coFormData.direct_cost_change || 0,
+          status: 'pending' as const,
+          completed_date: null,
+          invoiced: false,
+          invoiced_date: null,
+          paid: false,
+          paid_date: null,
+          inflation_adjustments: [],
+          inflation_superseded_by_co: false,
+          adjustment_type: null,
+          adjustment_amount: null,
+          adjustment_percentage: null,
+          adjustment_reason: null,
+          adjustment_calculated_at: null,
+        };
+
+        const { data: insertedMilestone, error: milestoneError } = await supabase
+          .from('milestones')
+          .insert([newMilestoneData])
+          .select()
+          .single();
+
+        if (milestoneError) {
+          console.error('Error creating milestone:', milestoneError);
+          toast.error(`Change order created but failed to create milestone: ${milestoneError.message}`);
+        } else {
+          setData(prev => ({
+            ...prev,
+            milestones: [...prev.milestones, insertedMilestone],
+          }));
+        }
+      }
+
+      // 4. Update local state
       setData(prev => ({
         ...prev,
         changeOrders: [...prev.changeOrders, insertedChangeOrder],
       }));
 
-      toast.success('Change order added successfully');
+      toast.success('Change order created successfully');
 
-      // Reset form and close dialog
-      setChangeOrderTitle('');
-      setChangeOrderNumber('');
-      setChangeOrderValue('');
-      setChangeOrderDate('');
+      // 5. Reset form and close dialog
+      setCoFormStep(1);
+      setCoFormData({
+        co_type: 'milestone_adjustment',
+        milestone_adjustments: [],
+        ptc_adjustments: [],
+      });
       setIsAddChangeOrderOpen(false);
     } catch (error: any) {
       console.error('Error adding change order:', error);
@@ -1179,74 +1275,408 @@ export default function ContractDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Add Change Order Dialog */}
+      {/* Enhanced Add Change Order Dialog - Multi-Step */}
       <Dialog open={isAddChangeOrderOpen} onOpenChange={(open) => {
         setIsAddChangeOrderOpen(open);
         if (!open) {
-          setChangeOrderTitle('');
-          setChangeOrderNumber('');
-          setChangeOrderValue('');
-          setChangeOrderDate('');
+          // Reset form
+          setCoFormStep(1);
+          setCoFormData({
+            co_type: 'milestone_adjustment',
+            milestone_adjustments: [],
+            ptc_adjustments: [],
+          });
         }
       }}>
-        <DialogContent>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Add Change Order</DialogTitle>
+            <DialogTitle>Add Change Order - Step {coFormStep} of 4</DialogTitle>
             <DialogDescription>
-              Create a new change order for this contract
+              {coFormStep === 1 && 'Select the type of change order'}
+              {coFormStep === 2 && 'Define the impact on contract value'}
+              {coFormStep === 3 && 'Attach CO document (optional)'}
+              {coFormStep === 4 && 'Review and confirm'}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="add_co_title">Title *</Label>
-              <Input
-                id="add_co_title"
-                placeholder="e.g., Scope Extension - Phase 2"
-                value={changeOrderTitle}
-                onChange={(e) => setChangeOrderTitle(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="add_co_number">Change Order Number</Label>
-              <Input
-                id="add_co_number"
-                placeholder="e.g., CO-002"
-                value={changeOrderNumber}
-                onChange={(e) => setChangeOrderNumber(e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="add_co_value">Value Change ({contract.currency})</Label>
-              <Input
-                id="add_co_value"
-                type="number"
-                step="any"
-                placeholder="0.00"
-                value={changeOrderValue}
-                onChange={(e) => setChangeOrderValue(e.target.value)}
-              />
-              <p className="text-xs text-gray-500">
-                Positive for increase, negative for decrease
-              </p>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="add_co_date">Effective Date</Label>
-              <Input
-                id="add_co_date"
-                type="date"
-                value={changeOrderDate}
-                onChange={(e) => setChangeOrderDate(e.target.value)}
-              />
-            </div>
+
+          {/* Progress indicator */}
+          <div className="flex items-center justify-between mb-6">
+            {[1, 2, 3, 4].map((step) => (
+              <div key={step} className="flex items-center">
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                    step <= coFormStep ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
+                  }`}
+                >
+                  {step}
+                </div>
+                {step < 4 && (
+                  <div
+                    className={`w-16 h-1 ${
+                      step < coFormStep ? 'bg-blue-600' : 'bg-gray-200'
+                    }`}
+                  />
+                )}
+              </div>
+            ))}
           </div>
-          <div className="flex justify-end gap-2">
+
+          {/* Step 1: Type Selection */}
+          {coFormStep === 1 && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label>Change Order Type *</Label>
+                <RadioGroup
+                  value={coFormData.co_type}
+                  onValueChange={(value) =>
+                    setCoFormData({ ...coFormData, co_type: value as ChangeOrderType })
+                  }
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
+                      <RadioGroupItem value="milestone_adjustment" id="type-milestone" />
+                      <Label htmlFor="type-milestone" className="cursor-pointer flex-1">
+                        <div className="font-medium">Adjust Individual Milestones</div>
+                        <p className="text-xs text-gray-500">
+                          Modify values or due dates of existing milestones
+                        </p>
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
+                      <RadioGroupItem value="lump_sum_immediate" id="type-immediate" />
+                      <Label htmlFor="type-immediate" className="cursor-pointer flex-1">
+                        <div className="font-medium">Lump Sum (Billed Immediately)</div>
+                        <p className="text-xs text-gray-500">
+                          One-time payment invoiced right away
+                        </p>
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
+                      <RadioGroupItem value="lump_sum_milestone" id="type-milestone-new" />
+                      <Label htmlFor="type-milestone-new" className="cursor-pointer flex-1">
+                        <div className="font-medium">Lump Sum (Billed at Specific Time)</div>
+                        <p className="text-xs text-gray-500">
+                          Creates a new milestone with a due date
+                        </p>
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
+                      <RadioGroupItem value="passthrough_only" id="type-ptc" />
+                      <Label htmlFor="type-ptc" className="cursor-pointer flex-1">
+                        <div className="font-medium">Pass-Through Cost Adjustment</div>
+                        <p className="text-xs text-gray-500">
+                          Adjust pass-through cost budgets only
+                        </p>
+                      </Label>
+                    </div>
+
+                    <div className="flex items-start space-x-2 border rounded-md p-3 cursor-pointer hover:bg-gray-50">
+                      <RadioGroupItem value="combined" id="type-combined" />
+                      <Label htmlFor="type-combined" className="cursor-pointer flex-1">
+                        <div className="font-medium">Combined (Direct + Pass-Through)</div>
+                        <p className="text-xs text-gray-500">
+                          Includes both direct revenue and pass-through cost changes
+                        </p>
+                      </Label>
+                    </div>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {/* Basic Fields */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="co_title">Title *</Label>
+                  <Input
+                    id="co_title"
+                    placeholder="e.g., Scope Extension - Phase 2"
+                    value={coFormData.title || ''}
+                    onChange={(e) => setCoFormData({ ...coFormData, title: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="co_number">Change Order Number</Label>
+                  <Input
+                    id="co_number"
+                    placeholder="e.g., CO-002"
+                    value={coFormData.change_order_number || ''}
+                    onChange={(e) =>
+                      setCoFormData({ ...coFormData, change_order_number: e.target.value })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="co_effective_date">Effective Date</Label>
+                <Input
+                  id="co_effective_date"
+                  type="date"
+                  value={coFormData.effective_date || ''}
+                  onChange={(e) =>
+                    setCoFormData({ ...coFormData, effective_date: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="co_description">Description</Label>
+                <Textarea
+                  id="co_description"
+                  placeholder="Describe the scope change..."
+                  rows={3}
+                  value={coFormData.description || ''}
+                  onChange={(e) =>
+                    setCoFormData({ ...coFormData, description: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Step 2: Impact Definition - Placeholder for now */}
+          {coFormStep === 2 && (
+            <div className="space-y-4">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                <p className="text-sm text-yellow-800">
+                  <strong>Step 2: Impact Definition</strong> - Implementation in progress.
+                  This step will allow you to select milestones to adjust or define new milestone values based on the CO type selected.
+                </p>
+              </div>
+
+              {/* Milestone Adjustment Type */}
+              {coFormData.co_type === 'milestone_adjustment' && (
+                <div className="space-y-3">
+                  <Label>Select Milestones to Adjust</Label>
+                  <div className="border rounded-md p-4 text-sm text-gray-500">
+                    Milestone selection interface will be implemented here.
+                    You will be able to select milestones and adjust their values/dates.
+                  </div>
+                </div>
+              )}
+
+              {/* Lump Sum Immediate */}
+              {coFormData.co_type === 'lump_sum_immediate' && (
+                <div className="space-y-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="direct_cost_immediate">Amount ({contract.currency}) *</Label>
+                    <Input
+                      id="direct_cost_immediate"
+                      type="number"
+                      step="any"
+                      placeholder="e.g., 25000"
+                      value={coFormData.direct_cost_change || ''}
+                      onChange={(e) =>
+                        setCoFormData({
+                          ...coFormData,
+                          direct_cost_change: parseFloat(e.target.value) || undefined,
+                        })
+                      }
+                    />
+                    <p className="text-xs text-gray-500">
+                      Positive for revenue increase, negative for refund
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="invoiced_now"
+                      checked={coFormData.invoiced_immediately || false}
+                      onChange={(e) =>
+                        setCoFormData({ ...coFormData, invoiced_immediately: e.target.checked })
+                      }
+                    />
+                    <Label htmlFor="invoiced_now">Mark as invoiced immediately</Label>
+                  </div>
+                </div>
+              )}
+
+              {/* Lump Sum Milestone */}
+              {coFormData.co_type === 'lump_sum_milestone' && (
+                <div className="space-y-3">
+                  <div className="grid gap-2">
+                    <Label htmlFor="new_milestone_name">Milestone Name *</Label>
+                    <Input
+                      id="new_milestone_name"
+                      placeholder="e.g., CO-002 Deliverable"
+                      value={coFormData.new_milestone_name || ''}
+                      onChange={(e) =>
+                        setCoFormData({ ...coFormData, new_milestone_name: e.target.value })
+                      }
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label htmlFor="new_milestone_value">Value ({contract.currency}) *</Label>
+                      <Input
+                        id="new_milestone_value"
+                        type="number"
+                        step="any"
+                        placeholder="e.g., 50000"
+                        value={coFormData.direct_cost_change || ''}
+                        onChange={(e) =>
+                          setCoFormData({
+                            ...coFormData,
+                            direct_cost_change: parseFloat(e.target.value) || undefined,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label htmlFor="new_milestone_due">Due Date *</Label>
+                      <Input
+                        id="new_milestone_due"
+                        type="date"
+                        value={coFormData.new_milestone_due_date || ''}
+                        onChange={(e) =>
+                          setCoFormData({ ...coFormData, new_milestone_due_date: e.target.value })
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Pass-Through or Combined */}
+              {(coFormData.co_type === 'passthrough_only' || coFormData.co_type === 'combined') && (
+                <div className="space-y-3">
+                  <Label>Pass-Through Cost Adjustments</Label>
+                  <div className="border rounded-md p-4 text-sm text-gray-500">
+                    Pass-through cost selection interface will be implemented here.
+                    You will be able to select PTC categories and adjust their budgets.
+                  </div>
+                </div>
+              )}
+
+              {/* Direct Cost for Combined Type */}
+              {coFormData.co_type === 'combined' && (
+                <div className="space-y-3 border-t pt-4">
+                  <Label className="font-medium">Direct Revenue/Cost Change</Label>
+                  <div className="grid gap-2">
+                    <Label htmlFor="direct_cost_combined">Amount ({contract.currency})</Label>
+                    <Input
+                      id="direct_cost_combined"
+                      type="number"
+                      step="any"
+                      placeholder="e.g., 25000 or -5000"
+                      value={coFormData.direct_cost_change || ''}
+                      onChange={(e) =>
+                        setCoFormData({
+                          ...coFormData,
+                          direct_cost_change: parseFloat(e.target.value) || undefined,
+                        })
+                      }
+                    />
+                    <p className="text-xs text-gray-500">
+                      Positive for revenue increase, negative for cost reduction
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Document - Placeholder for now */}
+          {coFormStep === 3 && (
+            <div className="space-y-4">
+              <div className="grid gap-2">
+                <Label>Change Order Document (Optional)</Label>
+                <div className="border-2 border-dashed rounded-md p-6 text-center">
+                  <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                  <p className="text-sm text-gray-600">
+                    Document upload feature coming soon
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    You'll be able to upload PDFs or provide SharePoint links
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Step 4: Review - Placeholder for now */}
+          {coFormStep === 4 && (
+            <div className="space-y-4">
+              <div className="bg-gray-50 rounded-md p-4 space-y-3">
+                <h3 className="font-medium">Change Order Summary</h3>
+
+                <div className="grid grid-cols-2 gap-2 text-sm">
+                  <div className="text-gray-500">Type:</div>
+                  <div className="font-medium">
+                    {coFormData.co_type === 'milestone_adjustment' && 'Milestone Adjustment'}
+                    {coFormData.co_type === 'lump_sum_immediate' && 'Lump Sum (Immediate)'}
+                    {coFormData.co_type === 'lump_sum_milestone' && 'Lump Sum (Milestone)'}
+                    {coFormData.co_type === 'passthrough_only' && 'Pass-Through Only'}
+                    {coFormData.co_type === 'combined' && 'Combined (Direct + PTC)'}
+                  </div>
+
+                  <div className="text-gray-500">Title:</div>
+                  <div className="font-medium">{coFormData.title || 'N/A'}</div>
+
+                  {coFormData.change_order_number && (
+                    <>
+                      <div className="text-gray-500">CO Number:</div>
+                      <div className="font-medium">{coFormData.change_order_number}</div>
+                    </>
+                  )}
+
+                  {coFormData.effective_date && (
+                    <>
+                      <div className="text-gray-500">Effective Date:</div>
+                      <div className="font-medium">{coFormData.effective_date}</div>
+                    </>
+                  )}
+                </div>
+
+                {/* Impact Summary */}
+                {coFormData.direct_cost_change && (
+                  <div className="border-t pt-3">
+                    <div className="text-sm">
+                      <span className="text-gray-500">Direct Revenue/Cost Change:</span>{' '}
+                      <span
+                        className={`font-medium ${
+                          (coFormData.direct_cost_change || 0) > 0
+                            ? 'text-green-600'
+                            : 'text-red-600'
+                        }`}
+                      >
+                        {(coFormData.direct_cost_change || 0) > 0 ? '+' : ''}
+                        {contract.currency} {coFormData.direct_cost_change?.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            {coFormStep > 1 && (
+              <Button variant="outline" onClick={() => setCoFormStep(coFormStep - 1)}>
+                Back
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setIsAddChangeOrderOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAddChangeOrder} disabled={!changeOrderTitle}>
-              Add Change Order
-            </Button>
-          </div>
+            {coFormStep < 4 ? (
+              <Button
+                onClick={() => setCoFormStep(coFormStep + 1)}
+                disabled={coFormStep === 1 && !coFormData.title}
+              >
+                Next
+              </Button>
+            ) : (
+              <Button onClick={handleAddChangeOrder} disabled={!coFormData.title}>
+                Save Change Order
+              </Button>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
