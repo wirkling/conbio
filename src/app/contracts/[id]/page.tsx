@@ -199,13 +199,6 @@ export default function ContractDetailPage() {
       invoiced_date: null,
       paid: false,
       paid_date: null,
-      inflation_adjustments: [],
-      inflation_superseded_by_co: false,
-      adjustment_type: null,
-      adjustment_amount: null,
-      adjustment_percentage: null,
-      adjustment_reason: null,
-      adjustment_calculated_at: null,
     };
 
     try {
