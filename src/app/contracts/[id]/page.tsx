@@ -131,6 +131,8 @@ export default function ContractDetailPage() {
   // Inflation adjustment form state
   const [inflationYear, setInflationYear] = useState(new Date().getFullYear().toString());
   const [inflationRate, setInflationRate] = useState('');
+  const [configuredRate, setConfiguredRate] = useState<number | null>(null);
+  const [manualOverride, setManualOverride] = useState(false);
   const [selectedMilestonesForInflation, setSelectedMilestonesForInflation] = useState<string[]>([]);
 
   const [data, setData] = useState<{
@@ -195,6 +197,13 @@ export default function ContractDetailPage() {
 
     fetchData();
   }, [user, contractId]);
+
+  // Fetch configured inflation rate when dialog opens or year changes
+  useEffect(() => {
+    if (isApplyInflationOpen && inflationYear) {
+      fetchConfiguredInflationRate(parseInt(inflationYear));
+    }
+  }, [isApplyInflationOpen, inflationYear]);
 
   if (data.loading) {
     return (
@@ -561,14 +570,44 @@ export default function ContractDetailPage() {
     }
   };
 
+  const fetchConfiguredInflationRate = async (year: number) => {
+    if (!contract.inflation_clause?.rate_type) {
+      setConfiguredRate(null);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('inflation_rates')
+        .select('*')
+        .eq('rate_type', contract.inflation_clause.rate_type)
+        .eq('year', year)
+        .single();
+
+      if (error) {
+        console.log('No configured rate found for year:', year);
+        setConfiguredRate(null);
+      } else if (data) {
+        setConfiguredRate(data.rate_percentage);
+        if (!manualOverride) {
+          setInflationRate(data.rate_percentage.toString());
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching inflation rate:', error);
+      setConfiguredRate(null);
+    }
+  };
+
   const handleApplyInflation = async () => {
-    if (!inflationRate || selectedMilestonesForInflation.length === 0) {
+    const effectiveRate = manualOverride ? parseFloat(inflationRate) : configuredRate;
+
+    if (!effectiveRate || selectedMilestonesForInflation.length === 0) {
       toast.error('Please enter inflation rate and select at least one milestone');
       return;
     }
 
-    const rate = parseFloat(inflationRate);
-    if (isNaN(rate) || rate <= 0) {
+    if (isNaN(effectiveRate) || effectiveRate <= 0) {
       toast.error('Please enter a valid inflation rate');
       return;
     }
@@ -582,13 +621,13 @@ export default function ContractDetailPage() {
         if (!milestone || milestone.inflation_superseded_by_co) continue;
 
         // Calculate adjustment amount
-        const adjustmentAmount = (milestone.current_value || 0) * (rate / 100);
+        const adjustmentAmount = (milestone.current_value || 0) * (effectiveRate / 100);
         const newValue = (milestone.current_value || 0) + adjustmentAmount;
 
         // Create new inflation adjustment record
         const newAdjustment = {
           year,
-          rate,
+          rate: effectiveRate,
           amount: adjustmentAmount,
           applied_date: new Date().toISOString().split('T')[0],
           applied_by: user?.id || null,
@@ -632,10 +671,13 @@ export default function ContractDetailPage() {
           }),
         }));
 
-        toast.success(`Inflation applied to ${updatedMilestones.length} milestone(s)`);
+        const overrideText = manualOverride ? ' (manual override)' : '';
+        toast.success(`Inflation applied to ${updatedMilestones.length} milestone(s)${overrideText}`);
 
         // Reset form
         setInflationRate('');
+        setConfiguredRate(null);
+        setManualOverride(false);
         setSelectedMilestonesForInflation([]);
         setIsApplyInflationOpen(false);
       }
@@ -1970,17 +2012,57 @@ export default function ContractDetailPage() {
                   placeholder="e.g., 2.5"
                   value={inflationRate}
                   onChange={(e) => setInflationRate(e.target.value)}
+                  disabled={!manualOverride && configuredRate !== null}
                 />
+                {configuredRate !== null && !manualOverride && (
+                  <p className="text-xs text-green-600">
+                    ✓ Configured rate: {configuredRate}% for {contract.inflation_clause?.rate_type}
+                  </p>
+                )}
+                {configuredRate === null && !manualOverride && (
+                  <p className="text-xs text-gray-500">
+                    No configured rate found. <a href="/settings/inflation" target="_blank" className="text-blue-600 hover:underline">Manage rates</a>
+                  </p>
+                )}
               </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="manual_override"
+                checked={manualOverride}
+                onChange={(e) => {
+                  setManualOverride(e.target.checked);
+                  if (!e.target.checked && configuredRate !== null) {
+                    setInflationRate(configuredRate.toString());
+                  }
+                }}
+              />
+              <Label htmlFor="manual_override" className="text-sm cursor-pointer">
+                Manual override (enter custom rate)
+              </Label>
             </div>
 
             <div className="grid gap-2">
               <Label>Select Milestones *</Label>
+              <p className="text-xs text-gray-500">
+                Only un-invoiced milestones with due dates in or after {inflationYear} are shown
+              </p>
               {data.milestones.length === 0 ? (
                 <p className="text-sm text-gray-500">No milestones available</p>
               ) : (
                 <div className="border rounded-md p-4 space-y-2 max-h-96 overflow-y-auto">
-                  {data.milestones.map((milestone) => {
+                  {data.milestones
+                    .filter((m) => {
+                      // Only show un-invoiced milestones
+                      if (m.invoiced) return false;
+                      // Only show milestones with due dates in/after selected year
+                      if (!m.current_due_date) return true; // Include milestones without dates
+                      const dueYear = new Date(m.current_due_date).getFullYear();
+                      return dueYear >= parseInt(inflationYear);
+                    })
+                    .map((milestone) => {
                     const isSelected = selectedMilestonesForInflation.includes(milestone.id);
                     const hasInflation = milestone.inflation_adjustments && milestone.inflation_adjustments.length > 0;
 
