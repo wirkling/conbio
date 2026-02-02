@@ -144,12 +144,12 @@ BEGIN
       title, contract_number, contract_type, status,
       vendor_name, client_name, project_name, sponsor_name,
       signature_date, start_date, end_date,
-      original_value, currency, department, description
+      original_value, current_value, currency, department, description
     ) VALUES (
       'Central Laboratory Services - PSORIA-CLEAR', 'SYM-SUB-2024-101', 'service_agreement', 'active',
       'EuroLab Diagnostics GmbH', 'Symbio Research GmbH', 'PSORIA-CLEAR Study', 'DermaPharma AG',
-      '2024-02-15', '2024-03-01', '2026-10-31',
-      285000, 'EUR', 'operations',
+      DATE '2024-02-15', DATE '2024-03-01', DATE '2026-10-31',
+      285000, 285000, 'EUR', 'operations',
       'Central lab services: hematology, clinical chemistry, immunology panels, biomarker testing'
     ) ON CONFLICT (contract_number) DO NOTHING
     RETURNING id INTO central_lab_id;
@@ -166,12 +166,12 @@ BEGIN
       title, contract_number, contract_type, status,
       vendor_name, client_name, project_name, sponsor_name,
       signature_date, start_date, end_date,
-      original_value, currency, department, description
+      original_value, current_value, currency, department, description
     ) VALUES (
       'Digital Imaging Core Lab - PSORIA-CLEAR', 'SYM-SUB-2024-102', 'service_agreement', 'active',
       'DermImaging Solutions AG', 'Symbio Research GmbH', 'PSORIA-CLEAR Study', 'DermaPharma AG',
-      '2024-03-01', '2024-04-01', '2026-11-30',
-      135000, 'EUR', 'operations',
+      DATE '2024-03-01', DATE '2024-04-01', DATE '2026-11-30',
+      135000, 135000, 'EUR', 'operations',
       'Standardized digital photography, PASI assessment, image quality control and archiving'
     ) ON CONFLICT (contract_number) DO NOTHING
     RETURNING id INTO imaging_lab_id;
@@ -187,12 +187,12 @@ BEGIN
       title, contract_number, contract_type, status,
       vendor_name, client_name, project_name, sponsor_name,
       signature_date, start_date, end_date,
-      original_value, currency, department, description
+      original_value, current_value, currency, department, description
     ) VALUES (
       'eCRF Development & Setup - PSORIA-CLEAR', 'SYM-SUB-2024-103', 'service_agreement', 'expired',
       'ClinData Systems Ltd', 'Symbio Research GmbH', 'PSORIA-CLEAR Study', 'DermaPharma AG',
-      '2024-01-20', '2024-02-01', '2024-06-30',
-      42000, 'EUR', 'operations',
+      DATE '2024-01-20', DATE '2024-02-01', DATE '2024-06-30',
+      42000, 42000, 'EUR', 'operations',
       'Electronic CRF design, database build, validation, and UAT for study database'
     ) ON CONFLICT (contract_number) DO NOTHING
     RETURNING id INTO data_mgmt_id;
@@ -389,12 +389,12 @@ BEGIN
       title, contract_number, contract_type, status,
       vendor_name, client_name, project_name, sponsor_name,
       signature_date, start_date, end_date,
-      original_value, currency, department, description
+      original_value, current_value, currency, department, description
     ) VALUES (
       '3D Wound Imaging - WOUND-REGEN', 'SYM-SUB-2025-201', 'service_agreement', 'active',
       'WoundTech Imaging Solutions', 'Symbio Research GmbH', 'WOUND-REGEN', 'RegenDerm Inc.',
-      '2025-01-25', '2025-02-15', '2026-10-31',
-      95000, 'EUR', 'operations',
+      DATE '2025-01-25', DATE '2025-02-15', DATE '2026-10-31',
+      95000, 95000, 'EUR', 'operations',
       'Specialized 3D wound imaging, volumetric analysis, and healing trajectory modeling'
     ) ON CONFLICT (contract_number) DO NOTHING
     RETURNING id INTO site_vendor_id;
