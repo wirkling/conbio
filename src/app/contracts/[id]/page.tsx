@@ -140,6 +140,7 @@ export default function ContractDetailPage() {
     milestones: Milestone[];
     changeOrders: ChangeOrder[];
     passthroughCosts: PassthroughCost[];
+    subcontractors: Contract[];
     loading: boolean;
     error: string | null;
   }>({
@@ -147,6 +148,7 @@ export default function ContractDetailPage() {
     milestones: [],
     changeOrders: [],
     passthroughCosts: [],
+    subcontractors: [],
     loading: true,
     error: null,
   });
@@ -178,11 +180,23 @@ export default function ContractDetailPage() {
           return;
         }
 
+        // Fetch subcontractors (child contracts)
+        const { data: subcontractorsData, error: subError } = await supabase
+          .from('contracts')
+          .select('*')
+          .eq('parent_contract_id', contractId)
+          .order('contract_number', { ascending: true });
+
+        if (subError) {
+          console.error('Error fetching subcontractors:', subError);
+        }
+
         setData({
           contract: fetchedData,
           milestones: fetchedData.milestones || [],
           changeOrders: fetchedData.change_orders || [],
           passthroughCosts: fetchedData.passthrough_costs || [],
+          subcontractors: subcontractorsData || [],
           loading: false,
           error: null,
         });
@@ -1285,6 +1299,9 @@ export default function ContractDetailPage() {
           <TabsTrigger value="milestones">Milestones ({data.milestones.length})</TabsTrigger>
           <TabsTrigger value="change-orders">Change Orders ({data.changeOrders.length})</TabsTrigger>
           <TabsTrigger value="ptc">Pass-Through Costs ({data.passthroughCosts.length})</TabsTrigger>
+          {data.contract?.contract_type === 'msa' && (
+            <TabsTrigger value="subcontractors">Subcontractors ({data.subcontractors.length})</TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="overview">
@@ -1821,6 +1838,73 @@ export default function ContractDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {data.contract?.contract_type === 'msa' && (
+          <TabsContent value="subcontractors">
+            <Card>
+              <CardHeader>
+                <CardTitle>Subcontractor Contracts</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {data.subcontractors.length === 0 ? (
+                  <p className="text-gray-500 p-6">No subcontractor contracts linked to this MSA</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Contract Number</TableHead>
+                        <TableHead>Title</TableHead>
+                        <TableHead>Vendor Name</TableHead>
+                        <TableHead className="text-right">Value</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>End Date</TableHead>
+                        <TableHead className="w-20">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.subcontractors.map((subcontract) => (
+                        <TableRow key={subcontract.id}>
+                          <TableCell className="font-medium">
+                            {subcontract.contract_number || '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/contracts/${subcontract.id}`}
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              {subcontract.title}
+                            </Link>
+                          </TableCell>
+                          <TableCell>{subcontract.vendor_name || '-'}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(subcontract.current_value || subcontract.original_value, subcontract.currency)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={statusColors[subcontract.status] || 'bg-gray-100 text-gray-800'}>
+                              {subcontract.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{formatDate(subcontract.end_date)}</TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              asChild
+                            >
+                              <Link href={`/contracts/${subcontract.id}`}>
+                                View
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Test Dialog - Read-only contract details */}
