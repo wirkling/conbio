@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
   SelectContent,
@@ -151,6 +152,7 @@ function ContractsContent() {
   const [searchQuery, setSearchQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -206,9 +208,43 @@ function ContractsContent() {
         return false;
       }
 
+      // Category filter
+      if (categoryFilter !== 'all') {
+        if (categoryFilter === 'main-projects') {
+          // MSAs without parent contract
+          if (contract.contract_type !== 'msa' || contract.parent_contract_id !== null) {
+            return false;
+          }
+        } else if (categoryFilter === 'subcontractors') {
+          // Contracts with parent contract
+          if (contract.parent_contract_id === null) {
+            return false;
+          }
+        } else if (categoryFilter === 'legal') {
+          // NDAs
+          if (contract.contract_type !== 'nda') {
+            return false;
+          }
+        }
+      }
+
       return true;
     });
-  }, [contracts, searchQuery, statusFilter, typeFilter]);
+  }, [contracts, searchQuery, statusFilter, typeFilter, categoryFilter]);
+
+  // Calculate category counts
+  const categoryCounts = useMemo(() => {
+    return {
+      all: contracts.length,
+      mainProjects: contracts.filter(
+        (c) => c.contract_type === 'msa' && c.parent_contract_id === null
+      ).length,
+      subcontractors: contracts.filter(
+        (c) => c.parent_contract_id !== null
+      ).length,
+      legal: contracts.filter((c) => c.contract_type === 'nda').length,
+    };
+  }, [contracts]);
 
   if (authLoading || loading) {
     return (
@@ -239,8 +275,30 @@ function ContractsContent() {
         </Link>
       </div>
 
-      {/* Filters */}
-      <Card>
+      {/* Category Tabs */}
+      <Tabs value={categoryFilter} onValueChange={setCategoryFilter}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="all">
+            All Contracts
+            <span className="ml-2 text-xs text-gray-500">({categoryCounts.all})</span>
+          </TabsTrigger>
+          <TabsTrigger value="main-projects">
+            Main Projects
+            <span className="ml-2 text-xs text-gray-500">({categoryCounts.mainProjects})</span>
+          </TabsTrigger>
+          <TabsTrigger value="subcontractors">
+            Subcontractors
+            <span className="ml-2 text-xs text-gray-500">({categoryCounts.subcontractors})</span>
+          </TabsTrigger>
+          <TabsTrigger value="legal">
+            Legal (NDAs)
+            <span className="ml-2 text-xs text-gray-500">({categoryCounts.legal})</span>
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={categoryFilter} className="space-y-6 mt-6">
+          {/* Filters */}
+          <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Filter className="h-4 w-4" />
@@ -299,7 +357,7 @@ function ContractsContent() {
 
       {/* Results count */}
       <div className="text-sm text-gray-500">
-        Showing {filteredContracts.length} of {mockContracts.length} contracts
+        Showing {filteredContracts.length} of {contracts.length} contracts
       </div>
 
       {/* Contracts table */}
@@ -381,6 +439,8 @@ function ContractsContent() {
           </Table>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
