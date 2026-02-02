@@ -374,7 +374,8 @@ function ContractsContent() {
             <TableHeader>
               <TableRow>
                 <TableHead>Contract</TableHead>
-                <TableHead>Parties</TableHead>
+                <TableHead>Entity</TableHead>
+                <TableHead>Counterparty</TableHead>
                 {/* Conditional column: Type or Parent Project */}
                 {categoryFilter === 'subcontractors' ? (
                   <TableHead>Parent Project</TableHead>
@@ -408,12 +409,18 @@ function ContractsContent() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <div className="space-y-0.5">
-                      <div className="font-medium">{contract.symbio_entity || 'Symbio'}</div>
-                      <div className="text-sm text-gray-500">
-                        {contract.vendor_name !== contract.symbio_entity ? contract.vendor_name : contract.client_name}
-                      </div>
+                    <div className="font-medium">{contract.symbio_entity || 'N/A'}</div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="font-medium">
+                      {contract.intercompany
+                        ? (contract.vendor_name !== contract.symbio_entity ? contract.vendor_name : contract.client_name)
+                        : (contract.vendor_name || contract.client_name || 'N/A')
+                      }
                     </div>
+                    {contract.intercompany && (
+                      <div className="text-xs text-blue-600">Intercompany</div>
+                    )}
                   </TableCell>
                   {/* Conditional cell: Type or Parent Project */}
                   {categoryFilter === 'subcontractors' ? (
@@ -472,7 +479,7 @@ function ContractsContent() {
               {filteredContracts.length === 0 && (
                 <TableRow>
                   <TableCell
-                    colSpan={categoryFilter === 'legal' ? 6 : 7}
+                    colSpan={categoryFilter === 'legal' ? 7 : 8}
                     className="text-center py-8"
                   >
                     <p className="text-gray-500">No contracts found</p>
