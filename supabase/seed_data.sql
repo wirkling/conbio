@@ -29,36 +29,36 @@ INSERT INTO contracts (
   signature_date, start_date, end_date, notice_period_days,
   original_value, current_value, currency, department, description
 ) VALUES
-  -- Active Phase III Psoriasis Trial
-  ('Phase III Clinical Trial - Psoriasis Biologics', 'SYM-2024-001', 'service_agreement', 'active',
+  -- Active Phase III Psoriasis Trial (MAIN/PARENT CONTRACT)
+  ('Phase III Clinical Trial - Psoriasis Biologics', 'SYM-2024-001', 'msa', 'active',
    'Symbio Research GmbH', 'DermaPharma AG', 'PSORIA-CLEAR Study', 'DermaPharma AG',
    DATE '2024-01-15', DATE '2024-02-01', DATE '2026-08-31', 90,
    2850000.00, 2850000.00, 'EUR', 'operations',
    'Multi-center Phase III trial evaluating novel IL-17 inhibitor for moderate to severe plaque psoriasis. 450 patients across 35 sites in EU.'),
 
-  -- Active Phase II Atopic Dermatitis Trial
-  ('Phase II Clinical Study - Atopic Dermatitis', 'SYM-2024-002', 'service_agreement', 'active',
+  -- Active Phase II Atopic Dermatitis Trial (MAIN/PARENT CONTRACT)
+  ('Phase II Clinical Study - Atopic Dermatitis', 'SYM-2024-002', 'msa', 'active',
    'Symbio Research GmbH', 'BioSkin Therapeutics', 'AD-RELIEF-02', 'BioSkin Therapeutics',
    DATE '2024-03-10', DATE '2024-04-01', DATE '2026-03-31', 60,
    1650000.00, 1650000.00, 'EUR', 'operations',
    'Phase IIb dose-finding study for topical JAK inhibitor in adolescents and adults with moderate atopic dermatitis. 180 patients, 18 sites.'),
 
-  -- Completed Phase II Acne Trial
-  ('Phase II Acne Vulgaris Study', 'SYM-2023-008', 'service_agreement', 'expired',
+  -- Completed Phase II Acne Trial (MAIN/PARENT CONTRACT)
+  ('Phase II Acne Vulgaris Study', 'SYM-2023-008', 'msa', 'expired',
    'Symbio Research GmbH', 'ClearSkin Biotech', 'ACNE-CLEAR', 'ClearSkin Biotech',
    DATE '2023-02-01', DATE '2023-03-01', DATE '2024-12-31', 60,
    890000.00, 890000.00, 'EUR', 'operations',
    'Phase II study of microbiome-modulating topical therapy for moderate acne vulgaris. 120 patients, 12 sites. Successfully completed.'),
 
-  -- Active Medical Device Study - Melanoma Screening
-  ('Medical Device Study - AI Melanoma Detection', 'SYM-2024-005', 'service_agreement', 'active',
+  -- Active Medical Device Study - Melanoma Screening (MAIN/PARENT CONTRACT)
+  ('Medical Device Study - AI Melanoma Detection', 'SYM-2024-005', 'msa', 'active',
    'Symbio Research GmbH', 'DermaTech Solutions', 'MELADETECT-01', 'DermaTech Solutions',
    DATE '2024-06-01', DATE '2024-07-01', DATE '2025-12-31', 45,
    425000.00, 425000.00, 'EUR', 'operations',
    'Clinical validation study for AI-powered melanoma detection device. 300 lesions assessed, 8 dermatology centers.'),
 
-  -- Active Phase I Wound Healing Study
-  ('Phase I/II Chronic Wound Healing', 'SYM-2025-001', 'service_agreement', 'active',
+  -- Active Phase I Wound Healing Study (MAIN/PARENT CONTRACT)
+  ('Phase I/II Chronic Wound Healing', 'SYM-2025-001', 'msa', 'active',
    'Symbio Research GmbH', 'RegenDerm Inc.', 'WOUND-REGEN', 'RegenDerm Inc.',
    DATE '2025-01-10', DATE '2025-02-01', DATE '2026-07-31', 60,
    1125000.00, 1125000.00, 'EUR', 'operations',
