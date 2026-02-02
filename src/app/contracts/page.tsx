@@ -116,7 +116,7 @@ const contractTypeLabels: Record<ContractType, string> = {
   license_agreement: 'License Agreement',
   nda: 'NDA',
   sow: 'Statement of Work',
-  msa: 'Master Service Agreement',
+  msa: 'Project Contract',
   purchase_order: 'Purchase Order',
   lease: 'Lease',
   sponsorship: 'Sponsorship',
@@ -218,7 +218,7 @@ function ContractsContent() {
       // Category filter
       if (categoryFilter !== 'all') {
         if (categoryFilter === 'main-projects') {
-          // MSAs without parent contract
+          // Project Contracts without parent contract
           if (contract.contract_type !== 'msa' || contract.parent_contract_id !== null) {
             return false;
           }
@@ -290,7 +290,7 @@ function ContractsContent() {
             <span className="ml-2 text-xs text-gray-500">({categoryCounts.all})</span>
           </TabsTrigger>
           <TabsTrigger value="main-projects">
-            Main Projects
+            Project Contracts
             <span className="ml-2 text-xs text-gray-500">({categoryCounts.mainProjects})</span>
           </TabsTrigger>
           <TabsTrigger value="subcontractors">
@@ -347,7 +347,7 @@ function ContractsContent() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="msa">Master Service Agreement</SelectItem>
+                <SelectItem value="msa">Project Contract</SelectItem>
                 <SelectItem value="service_agreement">Service Agreement</SelectItem>
                 <SelectItem value="license_agreement">License Agreement</SelectItem>
                 <SelectItem value="nda">NDA</SelectItem>

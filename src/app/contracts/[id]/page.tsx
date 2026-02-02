@@ -1276,6 +1276,14 @@ export default function ContractDetailPage() {
               <p className="text-sm text-gray-500">Symbio Entity</p>
               <p className="font-medium">{contract.symbio_entity || 'Not specified'}</p>
             </div>
+            {contract.intercompany && (
+              <div>
+                <p className="text-sm text-gray-500">Intercompany</p>
+                <div className="font-medium">
+                  <Badge className="bg-blue-100 text-blue-800">Intercompany Contract</Badge>
+                </div>
+              </div>
+            )}
             <div>
               <p className="text-sm text-gray-500">Vendor</p>
               <p className="font-medium">{contract.vendor_name || 'N/A'}</p>
@@ -1851,7 +1859,7 @@ export default function ContractDetailPage() {
               </CardHeader>
               <CardContent className="p-0">
                 {data.subcontractors.length === 0 ? (
-                  <p className="text-gray-500 p-6">No subcontractor contracts linked to this MSA</p>
+                  <p className="text-gray-500 p-6">No subcontractor contracts linked to this Project Contract</p>
                 ) : (
                   <Table>
                     <TableHeader>

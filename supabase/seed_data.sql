@@ -28,55 +28,63 @@ INSERT INTO contracts (
   vendor_name, client_name, project_name, sponsor_name,
   signature_date, start_date, end_date, notice_period_days,
   original_value, current_value, currency, department, description,
-  symbio_entity
+  symbio_entity, intercompany
 ) VALUES
   -- Active Phase III Psoriasis Trial (MAIN/PARENT CONTRACT)
   ('Phase III Clinical Trial - Psoriasis Biologics', 'SYM-2024-001', 'msa', 'active',
-   'Symbio Research GmbH', 'DermaPharma AG', 'PSORIA-CLEAR Study', 'DermaPharma AG',
+   'DermaPharma AG', 'DermaPharma AG', 'PSORIA-CLEAR Study', 'DermaPharma AG',
    DATE '2024-01-15', DATE '2024-02-01', DATE '2026-08-31', 90,
    2850000.00, 2850000.00, 'EUR', 'operations',
    'Multi-center Phase III trial evaluating novel IL-17 inhibitor for moderate to severe plaque psoriasis. 450 patients across 35 sites in EU.',
-   'Symbio Research GmbH'),
+   'SREU', FALSE),
 
   -- Active Phase II Atopic Dermatitis Trial (MAIN/PARENT CONTRACT)
   ('Phase II Clinical Study - Atopic Dermatitis', 'SYM-2024-002', 'msa', 'active',
-   'Symbio Research GmbH', 'BioSkin Therapeutics', 'AD-RELIEF-02', 'BioSkin Therapeutics',
+   'BioSkin Therapeutics', 'BioSkin Therapeutics', 'AD-RELIEF-02', 'BioSkin Therapeutics',
    DATE '2024-03-10', DATE '2024-04-01', DATE '2026-03-31', 60,
    1650000.00, 1650000.00, 'EUR', 'operations',
    'Phase IIb dose-finding study for topical JAK inhibitor in adolescents and adults with moderate atopic dermatitis. 180 patients, 18 sites.',
-   'Symbio Research GmbH'),
+   'SREU', FALSE),
 
   -- Completed Phase II Acne Trial (MAIN/PARENT CONTRACT)
   ('Phase II Acne Vulgaris Study', 'SYM-2023-008', 'msa', 'expired',
-   'Symbio Research GmbH', 'ClearSkin Biotech', 'ACNE-CLEAR', 'ClearSkin Biotech',
+   'ClearSkin Biotech', 'ClearSkin Biotech', 'ACNE-CLEAR', 'ClearSkin Biotech',
    DATE '2023-02-01', DATE '2023-03-01', DATE '2024-12-31', 60,
    890000.00, 890000.00, 'EUR', 'operations',
    'Phase II study of microbiome-modulating topical therapy for moderate acne vulgaris. 120 patients, 12 sites. Successfully completed.',
-   'Symbio Research GmbH'),
+   'SREU', FALSE),
 
   -- Active Medical Device Study - Melanoma Screening (MAIN/PARENT CONTRACT)
   ('Medical Device Study - AI Melanoma Detection', 'SYM-2024-005', 'msa', 'active',
-   'Symbio Clinical Services Ltd', 'DermaTech Solutions', 'MELADETECT-01', 'DermaTech Solutions',
+   'DermaTech Solutions', 'DermaTech Solutions', 'MELADETECT-01', 'DermaTech Solutions',
    DATE '2024-06-01', DATE '2024-07-01', DATE '2025-12-31', 45,
    425000.00, 425000.00, 'EUR', 'operations',
    'Clinical validation study for AI-powered melanoma detection device. 300 lesions assessed, 8 dermatology centers.',
-   'Symbio Clinical Services Ltd'),
+   'SRUS', FALSE),
 
   -- Active Phase I Wound Healing Study (MAIN/PARENT CONTRACT)
   ('Phase I/II Chronic Wound Healing', 'SYM-2025-001', 'msa', 'active',
-   'Symbio Research GmbH', 'RegenDerm Inc.', 'WOUND-REGEN', 'RegenDerm Inc.',
+   'RegenDerm Inc.', 'RegenDerm Inc.', 'WOUND-REGEN', 'RegenDerm Inc.',
    DATE '2025-01-10', DATE '2025-02-01', DATE '2026-07-31', 60,
    1125000.00, 1125000.00, 'EUR', 'operations',
    'Phase I/II study of stem cell-derived wound healing gel for diabetic foot ulcers. 80 patients, 10 specialized wound care centers.',
-   'Symbio Research GmbH'),
+   'SREU', FALSE),
 
   -- NDA with potential sponsor
   ('Confidentiality Agreement - Project Aurora', 'SYM-2024-NDA-003', 'nda', 'active',
-   'Symbio Research GmbH', 'GlobalDerm Pharmaceuticals', NULL, 'GlobalDerm Pharmaceuticals',
+   'GlobalDerm Pharmaceuticals', 'GlobalDerm Pharmaceuticals', NULL, 'GlobalDerm Pharmaceuticals',
    DATE '2024-09-15', DATE '2024-09-15', DATE '2027-09-14', 30,
    0.00, 0.00, 'EUR', 'legal',
    'Mutual NDA for discussions regarding Phase III vitiligo study opportunity.',
-   'Symbio Research GmbH')
+   'SREU', FALSE),
+
+  -- Intercompany Service Agreement (SREU provides services to SRUS)
+  ('Intercompany Services Agreement - Data Management', 'SYM-IC-2024-001', 'msa', 'active',
+   'SRUS', 'SRUS', 'Shared Data Platform', NULL,
+   DATE '2024-01-01', DATE '2024-01-01', DATE '2026-12-31', 90,
+   150000.00, 150000.00, 'EUR', 'operations',
+   'SREU provides centralized data management and biostatistics services to SRUS for their US-based clinical trials.',
+   'SREU', TRUE)
 ON CONFLICT (contract_number) DO NOTHING;
 
 -- Insert change orders
