@@ -1273,6 +1273,10 @@ export default function ContractDetailPage() {
         <CardContent>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div>
+              <p className="text-sm text-gray-500">Symbio Entity</p>
+              <p className="font-medium">{contract.symbio_entity || 'Not specified'}</p>
+            </div>
+            <div>
               <p className="text-sm text-gray-500">Vendor</p>
               <p className="font-medium">{contract.vendor_name || 'N/A'}</p>
             </div>

@@ -374,7 +374,7 @@ function ContractsContent() {
             <TableHeader>
               <TableRow>
                 <TableHead>Contract</TableHead>
-                <TableHead>Vendor / Client</TableHead>
+                <TableHead>Parties</TableHead>
                 {/* Conditional column: Type or Parent Project */}
                 {categoryFilter === 'subcontractors' ? (
                   <TableHead>Parent Project</TableHead>
@@ -408,12 +408,12 @@ function ContractsContent() {
                     </Link>
                   </TableCell>
                   <TableCell>
-                    <div className="text-gray-900">{contract.vendor_name}</div>
-                    {contract.project_name && (
+                    <div className="space-y-0.5">
+                      <div className="font-medium">{contract.symbio_entity || 'Symbio'}</div>
                       <div className="text-sm text-gray-500">
-                        {contract.project_name}
+                        {contract.vendor_name !== contract.symbio_entity ? contract.vendor_name : contract.client_name}
                       </div>
-                    )}
+                    </div>
                   </TableCell>
                   {/* Conditional cell: Type or Parent Project */}
                   {categoryFilter === 'subcontractors' ? (
