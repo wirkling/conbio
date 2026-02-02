@@ -161,7 +161,7 @@ function ContractsContent() {
     }
   }, [authLoading, user, router]);
 
-  // Fetch contracts from Supabase
+  // Fetch contracts from Supabase with parent contract info for subcontractors
   useEffect(() => {
     if (!user) return;
 
@@ -169,7 +169,14 @@ function ContractsContent() {
       setLoading(true);
       const { data, error } = await supabase
         .from('contracts')
-        .select('*')
+        .select(`
+          *,
+          parent_contract:parent_contract_id (
+            id,
+            contract_number,
+            title
+          )
+        `)
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -368,15 +375,27 @@ function ContractsContent() {
               <TableRow>
                 <TableHead>Contract</TableHead>
                 <TableHead>Vendor / Client</TableHead>
-                <TableHead>Type</TableHead>
+                {/* Conditional column: Type or Parent Project */}
+                {categoryFilter === 'subcontractors' ? (
+                  <TableHead>Parent Project</TableHead>
+                ) : (
+                  <TableHead>Type</TableHead>
+                )}
                 <TableHead>Status</TableHead>
                 <TableHead>End Date</TableHead>
-                <TableHead className="text-right">Value</TableHead>
+                {/* Hide Value column for legal/NDAs */}
+                {categoryFilter !== 'legal' && (
+                  <TableHead className="text-right">Value</TableHead>
+                )}
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filteredContracts.map((contract) => (
+              {filteredContracts.map((contract) => {
+                const contractWithRelations = contract as any; // Type assertion to access parent_contract
+                const parentContract = contractWithRelations.parent_contract;
+
+                return (
                 <TableRow key={contract.id} className="cursor-pointer hover:bg-gray-50">
                   <TableCell>
                     <Link href={`/contracts/${contract.id}`} className="block">
@@ -396,11 +415,32 @@ function ContractsContent() {
                       </div>
                     )}
                   </TableCell>
-                  <TableCell>
-                    <span className="text-sm text-gray-600">
-                      {contractTypeLabels[contract.contract_type]}
-                    </span>
-                  </TableCell>
+                  {/* Conditional cell: Type or Parent Project */}
+                  {categoryFilter === 'subcontractors' ? (
+                    <TableCell>
+                      {parentContract ? (
+                        <Link
+                          href={`/contracts/${parentContract.id}`}
+                          className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                        >
+                          <div className="font-medium">
+                            {parentContract.contract_number}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate max-w-[200px]">
+                            {parentContract.title}
+                          </div>
+                        </Link>
+                      ) : (
+                        <span className="text-sm text-gray-400">No parent</span>
+                      )}
+                    </TableCell>
+                  ) : (
+                    <TableCell>
+                      <span className="text-sm text-gray-600">
+                        {contractTypeLabels[contract.contract_type]}
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Badge className={statusColors[contract.status]}>
                       {contract.status}
@@ -411,11 +451,14 @@ function ContractsContent() {
                       {contract.end_date}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <span className="font-medium">
-                      {formatCurrency(contract.current_value || 0, contract.currency)}
-                    </span>
-                  </TableCell>
+                  {/* Hide Value column for legal/NDAs */}
+                  {categoryFilter !== 'legal' && (
+                    <TableCell className="text-right">
+                      <span className="font-medium">
+                        {formatCurrency(contract.current_value || 0, contract.currency)}
+                      </span>
+                    </TableCell>
+                  )}
                   <TableCell>
                     <Link href={`/contracts/${contract.id}`}>
                       <Button variant="ghost" size="icon">
@@ -424,10 +467,14 @@ function ContractsContent() {
                     </Link>
                   </TableCell>
                 </TableRow>
-              ))}
+              );
+              })}
               {filteredContracts.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center py-8">
+                  <TableCell
+                    colSpan={categoryFilter === 'legal' ? 6 : 7}
+                    className="text-center py-8"
+                  >
                     <p className="text-gray-500">No contracts found</p>
                     <p className="text-sm text-gray-400 mt-1">
                       Try adjusting your search or filters
