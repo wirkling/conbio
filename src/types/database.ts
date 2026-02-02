@@ -78,6 +78,8 @@ export interface Contract {
   client_name: string | null;
   project_name: string | null;
   sponsor_name: string | null;
+  symbio_entity: string | null;
+  intercompany: boolean;
 
   // Dates
   signature_date: string | null;
@@ -208,6 +210,8 @@ export interface ContractFormData {
   client_name?: string;
   project_name?: string;
   sponsor_name?: string;
+  symbio_entity?: string;
+  intercompany?: boolean;
   signature_date?: string;
   start_date?: string;
   end_date?: string;
