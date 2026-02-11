@@ -9,11 +9,18 @@ import {
   Contract,
   Milestone,
   PassthroughCost,
+  PassthroughActual,
   ChangeOrder,
   ChangeOrderFormData,
   MilestoneAdjustmentInput,
   PassthroughAdjustmentInput,
   ChangeOrderType,
+  PtcPrepayment,
+  PtcPrepaymentTopup,
+  PtcPrepaymentBalance,
+  PrepaymentModel,
+  PrepaymentDirection,
+  PrepaymentPaymentTerms,
 } from '@/types/database';
 import { toast } from 'sonner';
 import {
@@ -44,7 +51,14 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2, MoreHorizontal, CheckCheck, DollarSign, Banknote } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2, MoreHorizontal, CheckCheck, DollarSign, Banknote, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -128,6 +142,57 @@ export default function ContractDetailPage() {
   const [ptcActualSpent, setPtcActualSpent] = useState('');
   const [editingPTC, setEditingPTC] = useState<PassthroughCost | null>(null);
 
+  // Prepayment state
+  const [prepayment, setPrepayment] = useState<PtcPrepayment | null>(null);
+  const [prepaymentBalance, setPrepaymentBalance] = useState<PtcPrepaymentBalance | null>(null);
+  const [prepaymentTopups, setPrepaymentTopups] = useState<PtcPrepaymentTopup[]>([]);
+  const [passthroughActuals, setPassthroughActuals] = useState<PassthroughActual[]>([]);
+
+  // Prepayment dialog states
+  const [isConfigurePrepaymentOpen, setIsConfigurePrepaymentOpen] = useState(false);
+  const [isEditPrepaymentOpen, setIsEditPrepaymentOpen] = useState(false);
+  const [isAddActualOpen, setIsAddActualOpen] = useState(false);
+  const [isEditActualOpen, setIsEditActualOpen] = useState(false);
+  const [isAddTopupOpen, setIsAddTopupOpen] = useState(false);
+  const [isEditTopupOpen, setIsEditTopupOpen] = useState(false);
+
+  // Prepayment form state
+  const [prepaymentForm, setPrepaymentForm] = useState({
+    prepayment_model: 'retainer' as PrepaymentModel,
+    direction: 'receive' as PrepaymentDirection,
+    payment_terms: 'upon_signature' as PrepaymentPaymentTerms,
+    payment_terms_custom: '',
+    prepayment_amount: '',
+    threshold_amount: '',
+    threshold_percentage: '',
+    reconciliation_trigger: '',
+    reconciliation_date: '',
+    notes: '',
+  });
+
+  // Actual form state
+  const [actualForm, setActualForm] = useState({
+    passthrough_cost_id: '',
+    amount: '',
+    transaction_date: '',
+    period_year: new Date().getFullYear().toString(),
+    period_month: (new Date().getMonth() + 1).toString(),
+    invoice_number: '',
+    invoice_url: '',
+    description: '',
+  });
+  const [editingActual, setEditingActual] = useState<PassthroughActual | null>(null);
+
+  // Topup form state
+  const [topupForm, setTopupForm] = useState({
+    amount: '',
+    topup_date: new Date().toISOString().split('T')[0],
+    invoice_number: '',
+    invoice_url: '',
+    notes: '',
+  });
+  const [editingTopup, setEditingTopup] = useState<PtcPrepaymentTopup | null>(null);
+
   // Inflation adjustment form state
   const [inflationYear, setInflationYear] = useState(new Date().getFullYear().toString());
   const [inflationRate, setInflationRate] = useState('');
@@ -189,6 +254,44 @@ export default function ContractDetailPage() {
 
         if (subError) {
           console.error('Error fetching subcontractors:', subError);
+        }
+
+        // Fetch prepayment config
+        const { data: prepaymentData } = await supabase
+          .from('ptc_prepayments')
+          .select('*')
+          .eq('contract_id', contractId)
+          .maybeSingle();
+
+        if (prepaymentData) {
+          setPrepayment(prepaymentData);
+
+          // Fetch balance view
+          const { data: balanceData } = await supabase
+            .from('ptc_prepayment_balance')
+            .select('*')
+            .eq('contract_id', contractId)
+            .maybeSingle();
+          if (balanceData) setPrepaymentBalance(balanceData);
+
+          // Fetch top-ups
+          const { data: topupsData } = await supabase
+            .from('ptc_prepayment_topups')
+            .select('*')
+            .eq('prepayment_id', prepaymentData.id)
+            .order('topup_date', { ascending: false });
+          if (topupsData) setPrepaymentTopups(topupsData);
+        }
+
+        // Fetch passthrough actuals for all PTC categories
+        const ptcIds = (fetchedData.passthrough_costs || []).map((p: PassthroughCost) => p.id);
+        if (ptcIds.length > 0) {
+          const { data: actualsData } = await supabase
+            .from('passthrough_actuals')
+            .select('*')
+            .in('passthrough_cost_id', ptcIds)
+            .order('transaction_date', { ascending: false });
+          if (actualsData) setPassthroughActuals(actualsData);
         }
 
         setData({
@@ -1205,6 +1308,534 @@ export default function ContractDetailPage() {
     }
   };
 
+  // ============================================
+  // PREPAYMENT HANDLERS
+  // ============================================
+
+  const refreshPrepaymentData = async () => {
+    const { data: prepaymentData } = await supabase
+      .from('ptc_prepayments')
+      .select('*')
+      .eq('contract_id', contractId)
+      .maybeSingle();
+
+    setPrepayment(prepaymentData);
+
+    if (prepaymentData) {
+      const { data: balanceData } = await supabase
+        .from('ptc_prepayment_balance')
+        .select('*')
+        .eq('contract_id', contractId)
+        .maybeSingle();
+      setPrepaymentBalance(balanceData);
+
+      const { data: topupsData } = await supabase
+        .from('ptc_prepayment_topups')
+        .select('*')
+        .eq('prepayment_id', prepaymentData.id)
+        .order('topup_date', { ascending: false });
+      setPrepaymentTopups(topupsData || []);
+    } else {
+      setPrepaymentBalance(null);
+      setPrepaymentTopups([]);
+    }
+
+    // Refresh actuals
+    const ptcIds = data.passthroughCosts.map(p => p.id);
+    if (ptcIds.length > 0) {
+      const { data: actualsData } = await supabase
+        .from('passthrough_actuals')
+        .select('*')
+        .in('passthrough_cost_id', ptcIds)
+        .order('transaction_date', { ascending: false });
+      setPassthroughActuals(actualsData || []);
+    }
+  };
+
+  const handleCreatePrepayment = async () => {
+    if (!prepaymentForm.prepayment_amount) {
+      toast.error('Prepayment amount is required');
+      return;
+    }
+
+    try {
+      const defaultDirection: PrepaymentDirection = contract.parent_contract_id ? 'pay' : 'receive';
+
+      const insertData: Record<string, unknown> = {
+        contract_id: contractId,
+        prepayment_model: prepaymentForm.prepayment_model,
+        direction: prepaymentForm.direction || defaultDirection,
+        payment_terms: prepaymentForm.payment_terms,
+        payment_terms_custom: prepaymentForm.payment_terms === 'custom' ? prepaymentForm.payment_terms_custom : null,
+        prepayment_amount: parseFloat(prepaymentForm.prepayment_amount) || 0,
+        currency: contract.currency,
+        notes: prepaymentForm.notes || null,
+        created_by: user?.id || null,
+      };
+
+      if (prepaymentForm.prepayment_model === 'retainer') {
+        insertData.threshold_amount = prepaymentForm.threshold_amount ? parseFloat(prepaymentForm.threshold_amount) : null;
+        insertData.threshold_percentage = prepaymentForm.threshold_percentage ? parseFloat(prepaymentForm.threshold_percentage) : null;
+      } else {
+        insertData.reconciliation_trigger = prepaymentForm.reconciliation_trigger || null;
+        insertData.reconciliation_date = prepaymentForm.reconciliation_date || null;
+      }
+
+      const { error } = await supabase.from('ptc_prepayments').insert([insertData]);
+
+      if (error) {
+        toast.error(`Failed to create prepayment: ${error.message}`);
+        return;
+      }
+
+      toast.success('Prepayment configured successfully');
+      setIsConfigurePrepaymentOpen(false);
+      resetPrepaymentForm();
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to create prepayment: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleUpdatePrepayment = async () => {
+    if (!prepayment || !prepaymentForm.prepayment_amount) return;
+
+    try {
+      const updateData: Record<string, unknown> = {
+        prepayment_model: prepaymentForm.prepayment_model,
+        direction: prepaymentForm.direction,
+        payment_terms: prepaymentForm.payment_terms,
+        payment_terms_custom: prepaymentForm.payment_terms === 'custom' ? prepaymentForm.payment_terms_custom : null,
+        prepayment_amount: parseFloat(prepaymentForm.prepayment_amount) || 0,
+        notes: prepaymentForm.notes || null,
+      };
+
+      if (prepaymentForm.prepayment_model === 'retainer') {
+        updateData.threshold_amount = prepaymentForm.threshold_amount ? parseFloat(prepaymentForm.threshold_amount) : null;
+        updateData.threshold_percentage = prepaymentForm.threshold_percentage ? parseFloat(prepaymentForm.threshold_percentage) : null;
+        updateData.reconciliation_trigger = null;
+        updateData.reconciliation_date = null;
+      } else {
+        updateData.reconciliation_trigger = prepaymentForm.reconciliation_trigger || null;
+        updateData.reconciliation_date = prepaymentForm.reconciliation_date || null;
+        updateData.threshold_amount = null;
+        updateData.threshold_percentage = null;
+      }
+
+      const { error } = await supabase
+        .from('ptc_prepayments')
+        .update(updateData)
+        .eq('id', prepayment.id);
+
+      if (error) {
+        toast.error(`Failed to update prepayment: ${error.message}`);
+        return;
+      }
+
+      toast.success('Prepayment updated successfully');
+      setIsEditPrepaymentOpen(false);
+      resetPrepaymentForm();
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to update prepayment: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeletePrepayment = async () => {
+    if (!prepayment) return;
+    if (!confirm('Are you sure you want to delete this prepayment configuration? This will also delete all top-up records.')) return;
+
+    try {
+      const { error } = await supabase
+        .from('ptc_prepayments')
+        .delete()
+        .eq('id', prepayment.id);
+
+      if (error) {
+        toast.error(`Failed to delete prepayment: ${error.message}`);
+        return;
+      }
+
+      toast.success('Prepayment deleted');
+      setPrepayment(null);
+      setPrepaymentBalance(null);
+      setPrepaymentTopups([]);
+    } catch (error: any) {
+      toast.error(`Failed to delete prepayment: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleMarkPaymentReceived = async () => {
+    if (!prepayment) return;
+
+    try {
+      const { error } = await supabase
+        .from('ptc_prepayments')
+        .update({
+          payment_received: true,
+          payment_received_date: new Date().toISOString().split('T')[0],
+        })
+        .eq('id', prepayment.id);
+
+      if (error) {
+        toast.error(`Failed to update: ${error.message}`);
+        return;
+      }
+
+      toast.success('Payment marked as received');
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to update: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleReconcile = async () => {
+    if (!prepayment || !prepaymentBalance) return;
+
+    try {
+      const { error } = await supabase
+        .from('ptc_prepayments')
+        .update({
+          reconciled: true,
+          reconciled_date: new Date().toISOString().split('T')[0],
+          reconciled_amount: prepaymentBalance.current_balance,
+        })
+        .eq('id', prepayment.id);
+
+      if (error) {
+        toast.error(`Failed to reconcile: ${error.message}`);
+        return;
+      }
+
+      toast.success('Prepayment reconciled');
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to reconcile: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  // Actual handlers
+  const handleAddActual = async () => {
+    if (!actualForm.passthrough_cost_id || !actualForm.amount) {
+      toast.error('PTC category and amount are required');
+      return;
+    }
+
+    try {
+      const { data: inserted, error } = await supabase
+        .from('passthrough_actuals')
+        .insert([{
+          passthrough_cost_id: actualForm.passthrough_cost_id,
+          amount: parseFloat(actualForm.amount),
+          transaction_date: actualForm.transaction_date || new Date().toISOString().split('T')[0],
+          period_year: parseInt(actualForm.period_year) || null,
+          period_month: parseInt(actualForm.period_month) || null,
+          invoice_number: actualForm.invoice_number || null,
+          invoice_url: actualForm.invoice_url || null,
+          description: actualForm.description || null,
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        toast.error(`Failed to add actual: ${error.message}`);
+        return;
+      }
+
+      toast.success('PTC actual added');
+      setPassthroughActuals(prev => [inserted, ...prev]);
+      setIsAddActualOpen(false);
+      resetActualForm();
+
+      // Refresh passthrough costs to get updated actual_spent (DB trigger updates it)
+      const { data: refreshedPtc } = await supabase
+        .from('passthrough_costs')
+        .select('*')
+        .eq('contract_id', contractId);
+      if (refreshedPtc) {
+        setData(prev => ({ ...prev, passthroughCosts: refreshedPtc }));
+      }
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to add actual: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleEditActual = (actual: PassthroughActual) => {
+    setEditingActual(actual);
+    setActualForm({
+      passthrough_cost_id: actual.passthrough_cost_id,
+      amount: actual.amount.toString(),
+      transaction_date: actual.transaction_date,
+      period_year: actual.period_year?.toString() || '',
+      period_month: actual.period_month?.toString() || '',
+      invoice_number: actual.invoice_number || '',
+      invoice_url: actual.invoice_url || '',
+      description: actual.description || '',
+    });
+    setIsEditActualOpen(true);
+  };
+
+  const handleSaveEditActual = async () => {
+    if (!editingActual) return;
+
+    try {
+      const { error } = await supabase
+        .from('passthrough_actuals')
+        .update({
+          passthrough_cost_id: actualForm.passthrough_cost_id,
+          amount: parseFloat(actualForm.amount),
+          transaction_date: actualForm.transaction_date,
+          period_year: parseInt(actualForm.period_year) || null,
+          period_month: parseInt(actualForm.period_month) || null,
+          invoice_number: actualForm.invoice_number || null,
+          invoice_url: actualForm.invoice_url || null,
+          description: actualForm.description || null,
+        })
+        .eq('id', editingActual.id);
+
+      if (error) {
+        toast.error(`Failed to update actual: ${error.message}`);
+        return;
+      }
+
+      toast.success('PTC actual updated');
+      setPassthroughActuals(prev => prev.map(a =>
+        a.id === editingActual.id ? { ...a, ...{
+          passthrough_cost_id: actualForm.passthrough_cost_id,
+          amount: parseFloat(actualForm.amount),
+          transaction_date: actualForm.transaction_date,
+          period_year: parseInt(actualForm.period_year) || null,
+          period_month: parseInt(actualForm.period_month) || null,
+          invoice_number: actualForm.invoice_number || null,
+          invoice_url: actualForm.invoice_url || null,
+          description: actualForm.description || null,
+        }} : a
+      ));
+      setIsEditActualOpen(false);
+      setEditingActual(null);
+      resetActualForm();
+
+      const { data: refreshedPtc } = await supabase
+        .from('passthrough_costs')
+        .select('*')
+        .eq('contract_id', contractId);
+      if (refreshedPtc) {
+        setData(prev => ({ ...prev, passthroughCosts: refreshedPtc }));
+      }
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to update actual: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteActual = async (actualId: string) => {
+    if (!confirm('Are you sure you want to delete this PTC actual?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('passthrough_actuals')
+        .delete()
+        .eq('id', actualId);
+
+      if (error) {
+        toast.error(`Failed to delete actual: ${error.message}`);
+        return;
+      }
+
+      toast.success('PTC actual deleted');
+      setPassthroughActuals(prev => prev.filter(a => a.id !== actualId));
+
+      const { data: refreshedPtc } = await supabase
+        .from('passthrough_costs')
+        .select('*')
+        .eq('contract_id', contractId);
+      if (refreshedPtc) {
+        setData(prev => ({ ...prev, passthroughCosts: refreshedPtc }));
+      }
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to delete actual: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  // Topup handlers
+  const handleAddTopup = async () => {
+    if (!prepayment || !topupForm.amount) {
+      toast.error('Amount is required');
+      return;
+    }
+
+    try {
+      const { data: inserted, error } = await supabase
+        .from('ptc_prepayment_topups')
+        .insert([{
+          prepayment_id: prepayment.id,
+          amount: parseFloat(topupForm.amount),
+          topup_date: topupForm.topup_date || new Date().toISOString().split('T')[0],
+          invoice_number: topupForm.invoice_number || null,
+          invoice_url: topupForm.invoice_url || null,
+          notes: topupForm.notes || null,
+          created_by: user?.id || null,
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        toast.error(`Failed to add top-up: ${error.message}`);
+        return;
+      }
+
+      toast.success('Top-up added');
+      setPrepaymentTopups(prev => [inserted, ...prev]);
+      setIsAddTopupOpen(false);
+      resetTopupForm();
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to add top-up: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleEditTopup = (topup: PtcPrepaymentTopup) => {
+    setEditingTopup(topup);
+    setTopupForm({
+      amount: topup.amount.toString(),
+      topup_date: topup.topup_date,
+      invoice_number: topup.invoice_number || '',
+      invoice_url: topup.invoice_url || '',
+      notes: topup.notes || '',
+    });
+    setIsEditTopupOpen(true);
+  };
+
+  const handleSaveEditTopup = async () => {
+    if (!editingTopup) return;
+
+    try {
+      const { error } = await supabase
+        .from('ptc_prepayment_topups')
+        .update({
+          amount: parseFloat(topupForm.amount),
+          topup_date: topupForm.topup_date,
+          invoice_number: topupForm.invoice_number || null,
+          invoice_url: topupForm.invoice_url || null,
+          notes: topupForm.notes || null,
+        })
+        .eq('id', editingTopup.id);
+
+      if (error) {
+        toast.error(`Failed to update top-up: ${error.message}`);
+        return;
+      }
+
+      toast.success('Top-up updated');
+      setPrepaymentTopups(prev => prev.map(t =>
+        t.id === editingTopup.id ? { ...t,
+          amount: parseFloat(topupForm.amount),
+          topup_date: topupForm.topup_date,
+          invoice_number: topupForm.invoice_number || null,
+          invoice_url: topupForm.invoice_url || null,
+          notes: topupForm.notes || null,
+        } : t
+      ));
+      setIsEditTopupOpen(false);
+      setEditingTopup(null);
+      resetTopupForm();
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to update top-up: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteTopup = async (topupId: string) => {
+    if (!confirm('Are you sure you want to delete this top-up?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('ptc_prepayment_topups')
+        .delete()
+        .eq('id', topupId);
+
+      if (error) {
+        toast.error(`Failed to delete top-up: ${error.message}`);
+        return;
+      }
+
+      toast.success('Top-up deleted');
+      setPrepaymentTopups(prev => prev.filter(t => t.id !== topupId));
+      await refreshPrepaymentData();
+    } catch (error: any) {
+      toast.error(`Failed to delete top-up: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
+  const resetPrepaymentForm = () => {
+    const defaultDirection: PrepaymentDirection = contract.parent_contract_id ? 'pay' : 'receive';
+    setPrepaymentForm({
+      prepayment_model: 'retainer',
+      direction: defaultDirection,
+      payment_terms: 'upon_signature',
+      payment_terms_custom: '',
+      prepayment_amount: '',
+      threshold_amount: '',
+      threshold_percentage: '',
+      reconciliation_trigger: '',
+      reconciliation_date: '',
+      notes: '',
+    });
+  };
+
+  const resetActualForm = () => {
+    setActualForm({
+      passthrough_cost_id: '',
+      amount: '',
+      transaction_date: '',
+      period_year: new Date().getFullYear().toString(),
+      period_month: (new Date().getMonth() + 1).toString(),
+      invoice_number: '',
+      invoice_url: '',
+      description: '',
+    });
+  };
+
+  const resetTopupForm = () => {
+    setTopupForm({
+      amount: '',
+      topup_date: new Date().toISOString().split('T')[0],
+      invoice_number: '',
+      invoice_url: '',
+      notes: '',
+    });
+  };
+
+  const openEditPrepayment = () => {
+    if (!prepayment) return;
+    setPrepaymentForm({
+      prepayment_model: prepayment.prepayment_model,
+      direction: prepayment.direction,
+      payment_terms: prepayment.payment_terms,
+      payment_terms_custom: prepayment.payment_terms_custom || '',
+      prepayment_amount: prepayment.prepayment_amount.toString(),
+      threshold_amount: prepayment.threshold_amount?.toString() || '',
+      threshold_percentage: prepayment.threshold_percentage?.toString() || '',
+      reconciliation_trigger: prepayment.reconciliation_trigger || '',
+      reconciliation_date: prepayment.reconciliation_date || '',
+      notes: prepayment.notes || '',
+    });
+    setIsEditPrepaymentOpen(true);
+  };
+
+  const paymentTermsLabel = (terms: PrepaymentPaymentTerms, custom?: string | null) => {
+    const labels: Record<PrepaymentPaymentTerms, string> = {
+      upon_signature: 'Upon signature',
+      '30_days_after_signature': '30 days after signature',
+      '60_days_after_signature': '60 days after signature',
+      upon_study_start: 'Upon study start',
+      custom: custom || 'Custom',
+    };
+    return labels[terms] || terms;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -1310,7 +1941,10 @@ export default function ContractDetailPage() {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="milestones">Milestones ({data.milestones.length})</TabsTrigger>
           <TabsTrigger value="change-orders">Change Orders ({data.changeOrders.length})</TabsTrigger>
-          <TabsTrigger value="ptc">Pass-Through Costs ({data.passthroughCosts.length})</TabsTrigger>
+          <TabsTrigger value="ptc">
+            Pass-Through Costs ({data.passthroughCosts.length})
+            {prepaymentBalance?.is_below_threshold && <span className="ml-1 h-2 w-2 rounded-full bg-orange-500 inline-block" />}
+          </TabsTrigger>
           {data.contract?.contract_type === 'msa' && (
             <TabsTrigger value="subcontractors">Subcontractors ({data.subcontractors.length})</TabsTrigger>
           )}
@@ -1455,6 +2089,20 @@ export default function ContractDetailPage() {
                                 ></div>
                               </div>
                             </div>
+                            {prepayment && prepaymentBalance && (
+                              <div className="mt-2 pt-2 border-t">
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-purple-600">Prepayment:</span>
+                                  <span className="font-medium">{formatCurrency(prepayment.prepayment_amount, contract.currency)}</span>
+                                </div>
+                                <div className="flex justify-between text-xs">
+                                  <span className="text-purple-600">Balance:</span>
+                                  <span className={`font-medium ${prepaymentBalance.is_below_threshold ? 'text-orange-600' : 'text-green-600'}`}>
+                                    {formatCurrency(prepaymentBalance.current_balance, contract.currency)}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
                           </>
                         );
                       })()}
@@ -1787,68 +2435,380 @@ export default function ContractDetailPage() {
         </TabsContent>
 
         <TabsContent value="ptc">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle>Pass-Through Costs</CardTitle>
-              <Button size="sm" onClick={() => setIsAddPTCOpen(true)}>
-                <Plus className="h-4 w-4 mr-1" />
-                Add PTC
-              </Button>
-            </CardHeader>
-            <CardContent className="p-0">
-              {data.passthroughCosts.length === 0 ? (
-                <p className="text-gray-500 p-6">No pass-through costs defined</p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Category</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead className="text-right">Budget</TableHead>
-                      <TableHead className="text-right">Actual Spent</TableHead>
-                      <TableHead className="w-20">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.passthroughCosts.map((ptc) => (
-                      <TableRow key={ptc.id}>
-                        <TableCell className="font-medium">{ptc.description || '-'}</TableCell>
-                        <TableCell>{ptc.category}</TableCell>
-                        <TableCell>{ptc.passthrough_type}</TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(ptc.budgeted_total, ptc.currency)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(ptc.actual_spent, ptc.currency)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleEditPTC(ptc)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => handleDeletePTC(ptc.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+          <div className="space-y-4">
+            {/* Threshold Warning Banner */}
+            {prepaymentBalance?.is_below_threshold && (
+              <div className="flex items-center gap-3 p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <AlertTriangle className="h-5 w-5 text-orange-600 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-orange-800">Prepayment balance is below threshold</p>
+                  <p className="text-xs text-orange-600">
+                    Current balance: {formatCurrency(prepaymentBalance.current_balance, contract.currency)}
+                    {prepayment?.threshold_amount && ` (threshold: ${formatCurrency(prepayment.threshold_amount, contract.currency)})`}
+                    {prepayment?.threshold_percentage && ` (threshold: ${prepayment.threshold_percentage}% of funded)`}
+                  </p>
+                </div>
+                <Button size="sm" onClick={() => setIsAddTopupOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Top-Up
+                </Button>
+              </div>
+            )}
+
+            {/* Prepayment Configuration Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle>Prepayment / Retainer</CardTitle>
+                {!prepayment ? (
+                  <Button size="sm" onClick={() => {
+                    resetPrepaymentForm();
+                    setIsConfigurePrepaymentOpen(true);
+                  }}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Configure Prepayment
+                  </Button>
+                ) : (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" onClick={openEditPrepayment}>
+                      <Edit className="h-4 w-4 mr-1" />
+                      Edit
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-red-600" onClick={handleDeletePrepayment}>
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                )}
+              </CardHeader>
+              <CardContent>
+                {!prepayment ? (
+                  <p className="text-gray-500 text-sm">No prepayment configured for this contract.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Info Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500">Model</p>
+                        <p className="text-sm font-medium">
+                          {prepayment.prepayment_model === 'retainer' ? 'Retainer / Bucket' : 'Hold & Repay'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Direction</p>
+                        <p className="text-sm font-medium">
+                          {prepayment.direction === 'receive' ? 'Receive from client' : 'Pay to vendor'}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Payment Terms</p>
+                        <p className="text-sm font-medium">
+                          {paymentTermsLabel(prepayment.payment_terms, prepayment.payment_terms_custom)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500">Amount</p>
+                        <p className="text-sm font-medium">
+                          {formatCurrency(prepayment.prepayment_amount, contract.currency)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Payment Status */}
+                    <div className="flex items-center gap-2">
+                      <Badge className={prepayment.payment_received ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                        {prepayment.payment_received
+                          ? `Payment received ${prepayment.payment_received_date ? formatDate(prepayment.payment_received_date) : ''}`
+                          : 'Payment pending'}
+                      </Badge>
+                      {!prepayment.payment_received && (
+                        <Button size="sm" variant="outline" onClick={handleMarkPaymentReceived}>
+                          <CheckCircle2 className="h-4 w-4 mr-1" />
+                          Mark Received
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Balance Gauge (retainer model) */}
+                    {prepayment.prepayment_model === 'retainer' && prepaymentBalance && (
+                      <div className="space-y-2 p-4 bg-gray-50 rounded-lg">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Balance</span>
+                          <span className={`font-bold ${prepaymentBalance.is_below_threshold ? 'text-orange-600' : 'text-green-600'}`}>
+                            {formatCurrency(prepaymentBalance.current_balance, contract.currency)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-3">
+                          <div
+                            className={`h-3 rounded-full transition-all ${
+                              prepaymentBalance.is_below_threshold ? 'bg-orange-500' :
+                              (prepaymentBalance.current_balance / prepaymentBalance.total_funded) < 0.3 ? 'bg-yellow-500' :
+                              'bg-green-500'
+                            }`}
+                            style={{
+                              width: `${Math.max(0, Math.min(100, prepaymentBalance.total_funded > 0 ? (prepaymentBalance.current_balance / prepaymentBalance.total_funded) * 100 : 0))}%`,
+                            }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>Funded: {formatCurrency(prepaymentBalance.total_funded, contract.currency)}</span>
+                          <span>Drawn: {formatCurrency(prepaymentBalance.total_drawn, contract.currency)}</span>
+                        </div>
+                        {prepayment.threshold_amount && (
+                          <p className="text-xs text-gray-500">
+                            Threshold: {formatCurrency(prepayment.threshold_amount, contract.currency)}
+                          </p>
+                        )}
+                        {prepayment.threshold_percentage && (
+                          <p className="text-xs text-gray-500">
+                            Threshold: {prepayment.threshold_percentage}% of total funded
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Hold & Repay details */}
+                    {prepayment.prepayment_model === 'hold_repay' && prepaymentBalance && (
+                      <div className="space-y-2 p-4 bg-gray-50 rounded-lg">
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div>
+                            <p className="text-xs text-gray-500">Held Amount</p>
+                            <p className="font-medium">{formatCurrency(prepaymentBalance.total_funded, contract.currency)}</p>
                           </div>
-                        </TableCell>
+                          <div>
+                            <p className="text-xs text-gray-500">Drawn</p>
+                            <p className="font-medium">{formatCurrency(prepaymentBalance.total_drawn, contract.currency)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-gray-500">Net to Reconcile</p>
+                            <p className="font-bold">{formatCurrency(prepaymentBalance.current_balance, contract.currency)}</p>
+                          </div>
+                        </div>
+                        {prepayment.reconciliation_trigger && (
+                          <p className="text-xs text-gray-500">Trigger: {prepayment.reconciliation_trigger}</p>
+                        )}
+                        {prepayment.reconciliation_date && (
+                          <p className="text-xs text-gray-500">Reconciliation date: {formatDate(prepayment.reconciliation_date)}</p>
+                        )}
+                        {prepayment.reconciled ? (
+                          <Badge className="bg-green-100 text-green-800">
+                            Reconciled on {formatDate(prepayment.reconciled_date)} — {formatCurrency(prepayment.reconciled_amount, contract.currency)}
+                          </Badge>
+                        ) : (
+                          <Button size="sm" onClick={handleReconcile}>
+                            <CheckCircle2 className="h-4 w-4 mr-1" />
+                            Reconcile
+                          </Button>
+                        )}
+                      </div>
+                    )}
+
+                    {prepayment.notes && (
+                      <p className="text-xs text-gray-500">Notes: {prepayment.notes}</p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Monthly PTC Tracking Card */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle>Monthly PTC Tracking</CardTitle>
+                <Button size="sm" onClick={() => {
+                  resetActualForm();
+                  setIsAddActualOpen(true);
+                }} disabled={data.passthroughCosts.length === 0}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add PTC Actual
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {passthroughActuals.length === 0 ? (
+                  <p className="text-gray-500 p-6 text-sm">No PTC actuals recorded yet.{data.passthroughCosts.length === 0 && ' Add PTC categories first.'}</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Period</TableHead>
+                        <TableHead>PTC Category</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Invoice #</TableHead>
+                        <TableHead>Link</TableHead>
+                        <TableHead className="w-20">Actions</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {passthroughActuals.map((actual) => {
+                        const ptcCategory = data.passthroughCosts.find(p => p.id === actual.passthrough_cost_id);
+                        return (
+                          <TableRow key={actual.id}>
+                            <TableCell className="text-sm">{formatDate(actual.transaction_date)}</TableCell>
+                            <TableCell className="text-sm">
+                              {actual.period_month && actual.period_year
+                                ? `${actual.period_month}/${actual.period_year}`
+                                : actual.period_year || '-'}
+                            </TableCell>
+                            <TableCell className="text-sm">{ptcCategory?.description || ptcCategory?.category || '-'}</TableCell>
+                            <TableCell className="text-sm">{actual.description || '-'}</TableCell>
+                            <TableCell className="text-right font-medium text-sm">
+                              {formatCurrency(actual.amount, contract.currency)}
+                            </TableCell>
+                            <TableCell className="text-sm">{actual.invoice_number || '-'}</TableCell>
+                            <TableCell>
+                              {actual.invoice_url ? (
+                                <a href={actual.invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              ) : '-'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditActual(actual)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteActual(actual.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Top-Up History (retainer only) */}
+            {prepayment?.prepayment_model === 'retainer' && (
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle>Top-Up History</CardTitle>
+                  <Button size="sm" onClick={() => {
+                    resetTopupForm();
+                    setIsAddTopupOpen(true);
+                  }}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    Add Top-Up
+                  </Button>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {prepaymentTopups.length === 0 ? (
+                    <p className="text-gray-500 p-6 text-sm">No top-ups recorded yet.</p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead className="text-right">Amount</TableHead>
+                          <TableHead>Invoice #</TableHead>
+                          <TableHead>Link</TableHead>
+                          <TableHead>Notes</TableHead>
+                          <TableHead className="w-20">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {prepaymentTopups.map((topup) => (
+                          <TableRow key={topup.id}>
+                            <TableCell className="text-sm">{formatDate(topup.topup_date)}</TableCell>
+                            <TableCell className="text-right font-medium text-sm">
+                              {formatCurrency(topup.amount, contract.currency)}
+                            </TableCell>
+                            <TableCell className="text-sm">{topup.invoice_number || '-'}</TableCell>
+                            <TableCell>
+                              {topup.invoice_url ? (
+                                <a href={topup.invoice_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              ) : '-'}
+                            </TableCell>
+                            <TableCell className="text-sm">{topup.notes || '-'}</TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEditTopup(topup)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteTopup(topup.id)}>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* PTC Categories Card (existing, restructured) */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle>Pass-Through Cost Categories</CardTitle>
+                <Button size="sm" onClick={() => setIsAddPTCOpen(true)}>
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add PTC
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {data.passthroughCosts.length === 0 ? (
+                  <p className="text-gray-500 p-6">No pass-through costs defined</p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Category</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead className="text-right">Budget</TableHead>
+                        <TableHead className="text-right">Actual Spent</TableHead>
+                        <TableHead className="w-20">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {data.passthroughCosts.map((ptc) => (
+                        <TableRow key={ptc.id}>
+                          <TableCell className="font-medium">{ptc.description || '-'}</TableCell>
+                          <TableCell>{ptc.category}</TableCell>
+                          <TableCell>{ptc.passthrough_type}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(ptc.budgeted_total, ptc.currency)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(ptc.actual_spent, ptc.currency)}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleEditPTC(ptc)}
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => handleDeletePTC(ptc.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {data.contract?.contract_type === 'msa' && (
@@ -2354,7 +3314,7 @@ export default function ContractDetailPage() {
                 <Label>Change Order Type *</Label>
                 <RadioGroup
                   value={coFormData.co_type}
-                  onValueChange={(value) =>
+                  onValueChange={(value: string) =>
                     setCoFormData({ ...coFormData, co_type: value as ChangeOrderType })
                   }
                 >
@@ -3235,6 +4195,623 @@ export default function ContractDetailPage() {
               Add Pass-Through Cost
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Configure Prepayment Dialog */}
+      <Dialog open={isConfigurePrepaymentOpen} onOpenChange={setIsConfigurePrepaymentOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Configure Prepayment</DialogTitle>
+            <DialogDescription>Set up PTC prepayment / retainer tracking for this contract</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-2">
+              <Label>Prepayment Model *</Label>
+              <RadioGroup
+                value={prepaymentForm.prepayment_model}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, prepayment_model: v as PrepaymentModel }))}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="retainer" id="model_retainer" />
+                  <Label htmlFor="model_retainer" className="font-normal">
+                    Retainer / Bucket — refillable fund, monthly draws
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="hold_repay" id="model_hold_repay" />
+                  <Label htmlFor="model_hold_repay" className="font-normal">
+                    Hold & Repay — lump sum held until reconciliation
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Direction</Label>
+              <RadioGroup
+                value={prepaymentForm.direction}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, direction: v as PrepaymentDirection }))}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="receive" id="dir_receive" />
+                  <Label htmlFor="dir_receive" className="font-normal">Receive from client/sponsor</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="pay" id="dir_pay" />
+                  <Label htmlFor="dir_pay" className="font-normal">Pay to vendor</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Terms</Label>
+              <Select
+                value={prepaymentForm.payment_terms}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, payment_terms: v as PrepaymentPaymentTerms }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="upon_signature">Upon signature</SelectItem>
+                  <SelectItem value="30_days_after_signature">30 days after signature</SelectItem>
+                  <SelectItem value="60_days_after_signature">60 days after signature</SelectItem>
+                  <SelectItem value="upon_study_start">Upon study start</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+              {prepaymentForm.payment_terms === 'custom' && (
+                <Input
+                  placeholder="Describe custom payment terms"
+                  value={prepaymentForm.payment_terms_custom}
+                  onChange={(e) => setPrepaymentForm(f => ({ ...f, payment_terms_custom: e.target.value }))}
+                />
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Prepayment Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                placeholder="0.00"
+                value={prepaymentForm.prepayment_amount}
+                onChange={(e) => setPrepaymentForm(f => ({ ...f, prepayment_amount: e.target.value }))}
+              />
+            </div>
+
+            {/* Retainer-specific fields */}
+            {prepaymentForm.prepayment_model === 'retainer' && (
+              <div className="space-y-3 p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs font-medium text-blue-700">Retainer Threshold</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Threshold Amount ({contract.currency})</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    placeholder="e.g., 5000"
+                    value={prepaymentForm.threshold_amount}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, threshold_amount: e.target.value, threshold_percentage: '' }))}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 text-center">— or —</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Threshold Percentage (%)</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    placeholder="e.g., 20"
+                    value={prepaymentForm.threshold_percentage}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, threshold_percentage: e.target.value, threshold_amount: '' }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Hold & Repay specific fields */}
+            {prepaymentForm.prepayment_model === 'hold_repay' && (
+              <div className="space-y-3 p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs font-medium text-purple-700">Reconciliation</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Reconciliation Trigger</Label>
+                  <Input
+                    placeholder="e.g., End of study, Final milestone"
+                    value={prepaymentForm.reconciliation_trigger}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, reconciliation_trigger: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Reconciliation Date (optional)</Label>
+                  <Input
+                    type="date"
+                    value={prepaymentForm.reconciliation_date}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, reconciliation_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label>Notes</Label>
+              <Textarea
+                placeholder="Additional notes..."
+                value={prepaymentForm.notes}
+                onChange={(e) => setPrepaymentForm(f => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsConfigurePrepaymentOpen(false)}>Cancel</Button>
+            <Button onClick={handleCreatePrepayment} disabled={!prepaymentForm.prepayment_amount}>
+              Save Prepayment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Prepayment Dialog */}
+      <Dialog open={isEditPrepaymentOpen} onOpenChange={setIsEditPrepaymentOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Prepayment</DialogTitle>
+            <DialogDescription>Update prepayment configuration</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto">
+            <div className="space-y-2">
+              <Label>Prepayment Model *</Label>
+              <RadioGroup
+                value={prepaymentForm.prepayment_model}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, prepayment_model: v as PrepaymentModel }))}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="retainer" id="edit_model_retainer" />
+                  <Label htmlFor="edit_model_retainer" className="font-normal">Retainer / Bucket</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="hold_repay" id="edit_model_hold_repay" />
+                  <Label htmlFor="edit_model_hold_repay" className="font-normal">Hold & Repay</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Direction</Label>
+              <RadioGroup
+                value={prepaymentForm.direction}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, direction: v as PrepaymentDirection }))}
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="receive" id="edit_dir_receive" />
+                  <Label htmlFor="edit_dir_receive" className="font-normal">Receive from client/sponsor</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="pay" id="edit_dir_pay" />
+                  <Label htmlFor="edit_dir_pay" className="font-normal">Pay to vendor</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Payment Terms</Label>
+              <Select
+                value={prepaymentForm.payment_terms}
+                onValueChange={(v: string) => setPrepaymentForm(f => ({ ...f, payment_terms: v as PrepaymentPaymentTerms }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="upon_signature">Upon signature</SelectItem>
+                  <SelectItem value="30_days_after_signature">30 days after signature</SelectItem>
+                  <SelectItem value="60_days_after_signature">60 days after signature</SelectItem>
+                  <SelectItem value="upon_study_start">Upon study start</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+              {prepaymentForm.payment_terms === 'custom' && (
+                <Input
+                  placeholder="Describe custom payment terms"
+                  value={prepaymentForm.payment_terms_custom}
+                  onChange={(e) => setPrepaymentForm(f => ({ ...f, payment_terms_custom: e.target.value }))}
+                />
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Prepayment Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                value={prepaymentForm.prepayment_amount}
+                onChange={(e) => setPrepaymentForm(f => ({ ...f, prepayment_amount: e.target.value }))}
+              />
+            </div>
+
+            {prepaymentForm.prepayment_model === 'retainer' && (
+              <div className="space-y-3 p-3 bg-blue-50 rounded-lg">
+                <p className="text-xs font-medium text-blue-700">Retainer Threshold</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Threshold Amount ({contract.currency})</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={prepaymentForm.threshold_amount}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, threshold_amount: e.target.value, threshold_percentage: '' }))}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 text-center">— or —</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Threshold Percentage (%)</Label>
+                  <Input
+                    type="number"
+                    step="any"
+                    value={prepaymentForm.threshold_percentage}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, threshold_percentage: e.target.value, threshold_amount: '' }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            {prepaymentForm.prepayment_model === 'hold_repay' && (
+              <div className="space-y-3 p-3 bg-purple-50 rounded-lg">
+                <p className="text-xs font-medium text-purple-700">Reconciliation</p>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Reconciliation Trigger</Label>
+                  <Input
+                    value={prepaymentForm.reconciliation_trigger}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, reconciliation_trigger: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-xs">Reconciliation Date</Label>
+                  <Input
+                    type="date"
+                    value={prepaymentForm.reconciliation_date}
+                    onChange={(e) => setPrepaymentForm(f => ({ ...f, reconciliation_date: e.target.value }))}
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={prepaymentForm.notes}
+                onChange={(e) => setPrepaymentForm(f => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsEditPrepaymentOpen(false)}>Cancel</Button>
+            <Button onClick={handleUpdatePrepayment} disabled={!prepaymentForm.prepayment_amount}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add PTC Actual Dialog */}
+      <Dialog open={isAddActualOpen} onOpenChange={setIsAddActualOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add PTC Actual</DialogTitle>
+            <DialogDescription>Record a pass-through cost actual for this contract</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>PTC Category *</Label>
+              <Select
+                value={actualForm.passthrough_cost_id}
+                onValueChange={(v: string) => setActualForm(f => ({ ...f, passthrough_cost_id: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select PTC category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.passthroughCosts.map(ptc => (
+                    <SelectItem key={ptc.id} value={ptc.id}>
+                      {ptc.description || ptc.category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                placeholder="0.00"
+                value={actualForm.amount}
+                onChange={(e) => setActualForm(f => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Transaction Date</Label>
+              <Input
+                type="date"
+                value={actualForm.transaction_date}
+                onChange={(e) => setActualForm(f => ({ ...f, transaction_date: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Period Month</Label>
+                <Select
+                  value={actualForm.period_month}
+                  onValueChange={(v: string) => setActualForm(f => ({ ...f, period_month: v }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <SelectItem key={i + 1} value={(i + 1).toString()}>
+                        {new Date(2000, i).toLocaleString('en', { month: 'long' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Period Year</Label>
+                <Input
+                  type="number"
+                  value={actualForm.period_year}
+                  onChange={(e) => setActualForm(f => ({ ...f, period_year: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Input
+                placeholder="Brief description"
+                value={actualForm.description}
+                onChange={(e) => setActualForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Invoice Number</Label>
+              <Input
+                placeholder="INV-001"
+                value={actualForm.invoice_number}
+                onChange={(e) => setActualForm(f => ({ ...f, invoice_number: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>SharePoint / Invoice URL</Label>
+              <Input
+                placeholder="https://..."
+                value={actualForm.invoice_url}
+                onChange={(e) => setActualForm(f => ({ ...f, invoice_url: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddActualOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddActual} disabled={!actualForm.passthrough_cost_id || !actualForm.amount}>
+              Add Actual
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit PTC Actual Dialog */}
+      <Dialog open={isEditActualOpen} onOpenChange={setIsEditActualOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit PTC Actual</DialogTitle>
+            <DialogDescription>Update pass-through cost actual</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>PTC Category *</Label>
+              <Select
+                value={actualForm.passthrough_cost_id}
+                onValueChange={(v: string) => setActualForm(f => ({ ...f, passthrough_cost_id: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {data.passthroughCosts.map(ptc => (
+                    <SelectItem key={ptc.id} value={ptc.id}>
+                      {ptc.description || ptc.category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
+              <Label>Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                value={actualForm.amount}
+                onChange={(e) => setActualForm(f => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Transaction Date</Label>
+              <Input
+                type="date"
+                value={actualForm.transaction_date}
+                onChange={(e) => setActualForm(f => ({ ...f, transaction_date: e.target.value }))}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label>Period Month</Label>
+                <Select
+                  value={actualForm.period_month}
+                  onValueChange={(v: string) => setActualForm(f => ({ ...f, period_month: v }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <SelectItem key={i + 1} value={(i + 1).toString()}>
+                        {new Date(2000, i).toLocaleString('en', { month: 'long' })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Period Year</Label>
+                <Input
+                  type="number"
+                  value={actualForm.period_year}
+                  onChange={(e) => setActualForm(f => ({ ...f, period_year: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Description</Label>
+              <Input
+                value={actualForm.description}
+                onChange={(e) => setActualForm(f => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Invoice Number</Label>
+              <Input
+                value={actualForm.invoice_number}
+                onChange={(e) => setActualForm(f => ({ ...f, invoice_number: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>SharePoint / Invoice URL</Label>
+              <Input
+                value={actualForm.invoice_url}
+                onChange={(e) => setActualForm(f => ({ ...f, invoice_url: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsEditActualOpen(false); setEditingActual(null); }}>Cancel</Button>
+            <Button onClick={handleSaveEditActual} disabled={!actualForm.passthrough_cost_id || !actualForm.amount}>
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Top-Up Dialog */}
+      <Dialog open={isAddTopupOpen} onOpenChange={setIsAddTopupOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Top-Up</DialogTitle>
+            <DialogDescription>Add a retainer top-up payment</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                placeholder="0.00"
+                value={topupForm.amount}
+                onChange={(e) => setTopupForm(f => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Top-Up Date</Label>
+              <Input
+                type="date"
+                value={topupForm.topup_date}
+                onChange={(e) => setTopupForm(f => ({ ...f, topup_date: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Invoice Number</Label>
+              <Input
+                placeholder="INV-001"
+                value={topupForm.invoice_number}
+                onChange={(e) => setTopupForm(f => ({ ...f, invoice_number: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>SharePoint / Invoice URL</Label>
+              <Input
+                placeholder="https://..."
+                value={topupForm.invoice_url}
+                onChange={(e) => setTopupForm(f => ({ ...f, invoice_url: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Notes</Label>
+              <Textarea
+                placeholder="Additional notes..."
+                value={topupForm.notes}
+                onChange={(e) => setTopupForm(f => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsAddTopupOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddTopup} disabled={!topupForm.amount}>
+              Add Top-Up
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Top-Up Dialog */}
+      <Dialog open={isEditTopupOpen} onOpenChange={setIsEditTopupOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Top-Up</DialogTitle>
+            <DialogDescription>Update top-up details</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="grid gap-2">
+              <Label>Amount ({contract.currency}) *</Label>
+              <Input
+                type="number"
+                step="any"
+                value={topupForm.amount}
+                onChange={(e) => setTopupForm(f => ({ ...f, amount: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Top-Up Date</Label>
+              <Input
+                type="date"
+                value={topupForm.topup_date}
+                onChange={(e) => setTopupForm(f => ({ ...f, topup_date: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Invoice Number</Label>
+              <Input
+                value={topupForm.invoice_number}
+                onChange={(e) => setTopupForm(f => ({ ...f, invoice_number: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>SharePoint / Invoice URL</Label>
+              <Input
+                value={topupForm.invoice_url}
+                onChange={(e) => setTopupForm(f => ({ ...f, invoice_url: e.target.value }))}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label>Notes</Label>
+              <Textarea
+                value={topupForm.notes}
+                onChange={(e) => setTopupForm(f => ({ ...f, notes: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setIsEditTopupOpen(false); setEditingTopup(null); }}>Cancel</Button>
+            <Button onClick={handleSaveEditTopup} disabled={!topupForm.amount}>
+              Save Changes
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

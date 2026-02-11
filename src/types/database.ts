@@ -420,6 +420,7 @@ export interface PassthroughActual {
   period_quarter: number | null;
   period_month: number | null;
   invoice_number: string | null;
+  invoice_url: string | null;
   created_at: string;
 }
 
@@ -453,6 +454,71 @@ export interface VendorRevenueShare {
   updated_at: string;
 }
 
+// ============================================
+// PTC PREPAYMENTS
+// ============================================
+
+export type PrepaymentModel = 'retainer' | 'hold_repay';
+export type PrepaymentDirection = 'receive' | 'pay';
+export type PrepaymentPaymentTerms =
+  | 'upon_signature'
+  | '30_days_after_signature'
+  | '60_days_after_signature'
+  | 'upon_study_start'
+  | 'custom';
+
+export interface PtcPrepayment {
+  id: string;
+  contract_id: string;
+  prepayment_model: PrepaymentModel;
+  direction: PrepaymentDirection;
+  payment_terms: PrepaymentPaymentTerms;
+  payment_terms_custom: string | null;
+  prepayment_amount: number;
+  currency: string;
+  threshold_amount: number | null;
+  threshold_percentage: number | null;
+  reconciliation_trigger: string | null;
+  reconciliation_milestone_id: string | null;
+  reconciliation_date: string | null;
+  reconciled: boolean;
+  reconciled_date: string | null;
+  reconciled_amount: number | null;
+  payment_received: boolean;
+  payment_received_date: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface PtcPrepaymentTopup {
+  id: string;
+  prepayment_id: string;
+  amount: number;
+  topup_date: string;
+  invoice_number: string | null;
+  invoice_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface PtcPrepaymentBalance {
+  prepayment_id: string;
+  contract_id: string;
+  prepayment_model: PrepaymentModel;
+  prepayment_amount: number;
+  currency: string;
+  threshold_amount: number | null;
+  threshold_percentage: number | null;
+  total_funded: number;
+  total_drawn: number;
+  current_balance: number;
+  is_below_threshold: boolean;
+}
+
 // Extended contract with all relations
 export interface ContractWithAllRelations extends Contract {
   change_orders?: ChangeOrder[];
@@ -462,6 +528,7 @@ export interface ContractWithAllRelations extends Contract {
   vendor_revenue_shares?: VendorRevenueShare[];
   linked_vendor_contracts?: Contract[];
   linked_client_contracts?: Contract[];
+  ptc_prepayment?: PtcPrepayment | null;
   owner?: User | null;
   parent_contract?: Contract | null;
 }
