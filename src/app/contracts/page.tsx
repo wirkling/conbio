@@ -121,6 +121,7 @@ const contractTypeLabels: Record<ContractType, string> = {
   lease: 'Lease',
   sponsorship: 'Sponsorship',
   partnership: 'Partnership',
+  site_contract: 'Site Contract',
   other: 'Other',
 };
 
@@ -355,6 +356,7 @@ function ContractsContent() {
                 <SelectItem value="lease">Lease</SelectItem>
                 <SelectItem value="sponsorship">Sponsorship</SelectItem>
                 <SelectItem value="partnership">Partnership</SelectItem>
+                <SelectItem value="site_contract">Site Contract</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>

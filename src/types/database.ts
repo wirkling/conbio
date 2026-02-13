@@ -10,6 +10,7 @@ export type ContractType =
   | 'lease'
   | 'sponsorship'
   | 'partnership'
+  | 'site_contract'
   | 'other';
 
 export type ContractStatus =
@@ -23,7 +24,7 @@ export type Department = 'legal' | 'finance' | 'operations' | 'other';
 
 export type UserRole = 'admin' | 'editor' | 'viewer';
 
-export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF';
+export type Currency = 'EUR' | 'USD' | 'GBP' | 'CHF' | 'PLN';
 
 export type RetentionPeriodUnit = 'days' | 'months' | 'years';
 
@@ -529,8 +530,96 @@ export interface ContractWithAllRelations extends Contract {
   linked_vendor_contracts?: Contract[];
   linked_client_contracts?: Contract[];
   ptc_prepayment?: PtcPrepayment | null;
+  invoice_audits?: InvoiceAudit[];
   owner?: User | null;
   parent_contract?: Contract | null;
+}
+
+// ============================================
+// INVOICE AUDITS
+// ============================================
+
+export type InvoiceAuditStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export interface InvoiceAudit {
+  id: string;
+  contract_id: string;
+
+  // Invoice file
+  invoice_file_name: string;
+  invoice_file_path: string;
+  invoice_file_size_bytes: number | null;
+
+  // Contract document reference
+  contract_document_id: string | null;
+  contract_document_path: string | null;
+
+  // Status
+  status: InvoiceAuditStatus;
+  error_message: string | null;
+
+  // Results
+  audit_result: InvoiceAuditResult | null;
+
+  // Summary
+  total_discrepancies: number;
+  invoice_total: number | null;
+  contract_expected_total: number | null;
+  currency: string;
+
+  created_at: string;
+  updated_at: string;
+  created_by: string | null;
+}
+
+export interface InvoiceAuditResult {
+  summary: {
+    overall_status: 'match' | 'discrepancies_found' | 'major_discrepancies';
+    confidence_score: number;
+    invoice_number: string | null;
+    invoice_date: string | null;
+    invoice_period: string | null;
+    total_invoiced: number;
+    total_contracted: number;
+    total_difference: number;
+    currency: string;
+  };
+  line_items: InvoiceAuditLineItem[];
+  discrepancies: InvoiceAuditDiscrepancy[];
+  recommendations: string[];
+  extracted_contract_terms: ExtractedContractTerms;
+}
+
+export interface InvoiceAuditLineItem {
+  description: string;
+  invoice_quantity: number | null;
+  invoice_unit_price: number | null;
+  invoice_total: number;
+  contract_unit_price: number | null;
+  contract_total: number | null;
+  status: 'match' | 'price_mismatch' | 'not_in_contract' | 'missing_from_invoice';
+  difference: number | null;
+  notes: string | null;
+}
+
+export interface InvoiceAuditDiscrepancy {
+  type: 'price_mismatch' | 'quantity_mismatch' | 'unauthorized_charge' | 'missing_item' | 'calculation_error' | 'other';
+  severity: 'high' | 'medium' | 'low';
+  description: string;
+  invoice_value: number | null;
+  contract_value: number | null;
+  difference: number | null;
+  line_item_reference: string | null;
+}
+
+export interface ExtractedContractTerms {
+  visit_fees: { visit_name: string; fee: number }[];
+  startup_fee: number | null;
+  closeout_fee: number | null;
+  screen_failure_fee: number | null;
+  patient_compensation: number | null;
+  other_fees: { description: string; fee: number }[];
+  currency: string;
 }
 
 // ============================================

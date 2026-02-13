@@ -58,7 +58,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2, MoreHorizontal, CheckCheck, DollarSign, Banknote, AlertTriangle, RefreshCw, ExternalLink } from 'lucide-react';
+import { ArrowLeft, FileText, Plus, Target, Receipt, Edit, Trash2, CheckCircle2, Upload, Link2, MoreHorizontal, CheckCheck, DollarSign, Banknote, AlertTriangle, RefreshCw, ExternalLink, ClipboardCheck } from 'lucide-react';
+import InvoiceAuditTab from '@/components/invoice-audit/InvoiceAuditTab';
 import {
   Table,
   TableBody,
@@ -1948,6 +1949,12 @@ export default function ContractDetailPage() {
           {data.contract?.contract_type === 'msa' && (
             <TabsTrigger value="subcontractors">Subcontractors ({data.subcontractors.length})</TabsTrigger>
           )}
+          {data.contract?.contract_type === 'site_contract' && (
+            <TabsTrigger value="invoice-audit">
+              <ClipboardCheck className="h-4 w-4 mr-1" />
+              Invoice Audit
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="overview">
@@ -2875,6 +2882,16 @@ export default function ContractDetailPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+        )}
+
+        {data.contract?.contract_type === 'site_contract' && (
+          <TabsContent value="invoice-audit">
+            <InvoiceAuditTab
+              contractId={contractId}
+              currency={contract.currency || 'EUR'}
+              hasDocuments={Boolean(contract.document_urls && contract.document_urls.length > 0)}
+            />
           </TabsContent>
         )}
       </Tabs>

@@ -262,6 +262,7 @@ export default function NewContractPage() {
                     <SelectItem value="lease">Lease</SelectItem>
                     <SelectItem value="sponsorship">Sponsorship</SelectItem>
                     <SelectItem value="partnership">Partnership</SelectItem>
+                    <SelectItem value="site_contract">Site Contract</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
@@ -422,6 +423,7 @@ export default function NewContractPage() {
                     <SelectItem value="USD">USD</SelectItem>
                     <SelectItem value="GBP">GBP</SelectItem>
                     <SelectItem value="CHF">CHF</SelectItem>
+                    <SelectItem value="PLN">PLN</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
